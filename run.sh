@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The shared identities exist with the same UID/GID on every host, so keys and
 # file ownership follow the account rather than the machine.
 CONTAINER_USER="$(id -un)"
-OPENAGENT_USERS="${OPENAGENT_USERS:-claude ansible}"
+OPENAGENT_USERS="${OPENAGENT_USERS:-claude ansible openagent}"
 if [[ " ${OPENAGENT_USERS} " != *" ${CONTAINER_USER} "* ]]; then
     echo "!! run.sh must run as one of: ${OPENAGENT_USERS}, not ${CONTAINER_USER}" >&2
     exit 1
@@ -184,6 +184,7 @@ exec docker run --rm "${TTY[@]}" \
     -e "OLLAMA_HOST=http://${OLLAMA_NAME}:11434" \
     -e "OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH}" \
     -e "OPENAGENT_MODEL=${OPENAGENT_MODEL}" \
+    -e GH_TOKEN \
     -v "${TMP_DIR}:/tmp" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     "${MOUNTS[@]}" \

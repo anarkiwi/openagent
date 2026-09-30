@@ -60,10 +60,15 @@ session refuses to start if `OPENAGENT_MODEL` is not among them.
 
 `AGENTS.md` is installed as opencode's global instructions.
 
-The session runs as the invoking identity (UID, `sw` group, home path) with
-umask `002`, and mounts the working directory, `/scratch`, the docker socket
+The session runs as the invoking identity (UID, `sw` group, home path), which
+must be one of `OPENAGENT_USERS` (default `claude ansible openagent`): accounts
+with the same UID on every host and `sw` as primary group. It uses umask `002`
+and mounts the working directory, `/scratch`, the docker socket
 and, where present, `~/.gitconfig`, `~/.config/gh`, `~/.ssh` (read-only, with a
-writable `known_hosts.d`), `/etc/pip.conf` and the apt proxy config. Its `/tmp`
+writable `known_hosts.d`), `/etc/pip.conf` and the apt proxy config.
+`GH_TOKEN` is passed through when set, as it is for the `openagent` identity,
+whose GitHub token comes from its shell environment rather than `gh` login
+state. Its `/tmp`
 is `/scratch/tmp/<name>`, emptied at start. Session state is discarded on exit.
 
 ## Test
