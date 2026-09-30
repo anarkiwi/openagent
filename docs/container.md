@@ -1,0 +1,72 @@
+# Container
+
+`run.sh` builds two images and runs two kinds of container on the host whose
+docker daemon it talks to.
+
+| Container | Image | Lifetime |
+| --- | --- | --- |
+| `openagent-ollama` | `Dockerfile.ollama` | one per host, `--restart unless-stopped`, shared by all sessions |
+| `openagent-<host>-<dir>` | `Dockerfile.opencode` | one per session, `--rm` |
+
+They share the user-defined docker network `openagent`; the session reaches the
+server as `http://openagent-ollama:11434` and the server publishes no host
+port.
+
+## Host
+
+The host is the docker daemon's name (`docker info`), not `hostname`, so a
+`run.sh` started inside another container still picks up the right
+`hosts/<host>.sh`. That file may override any variable set before it is sourced
+and append flags to `HOST_DOCKER_ARGS` (session) or `OLLAMA_DOCKER_ARGS`
+(server). `hosts/defroster.sh` gives the server `--gpus all`; the Ollama image
+carries its own CUDA runtime, so only the host's `nvidia-container-toolkit` is
+required.
+
+## Ollama server
+
+Runs as the invoking identity with `HOME` and `OLLAMA_MODELS` under
+`/scratch/ollama` (`OLLAMA_DIR`), with umask `002` and a setgid, group-writable
+store, so either identity can pull into it. Settings:
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `OLLAMA_CONTEXT_LENGTH` | `32768` | context the server evaluates; opencode's limits follow it |
+| `OLLAMA_KEEP_ALIVE` | `30m` | how long an idle model stays loaded |
+| `OLLAMA_NOPRUNE` | `1` | the store is shared across hosts, so a starting server must not delete blobs another host is still downloading |
+| `OLLAMA_FLASH_ATTENTION` | `1` | |
+| `OLLAMA_NO_CLOUD` | `1` | local models only |
+
+The server is replaced only when its image or run arguments change: a hash of
+both is stored in the `openagent.spec` label and compared on every run, so a
+routine start never interrupts the host's other sessions. The identity is not
+part of the hash.
+
+Model pulls take an `flock` on `/scratch/ollama/.pull.lock`, so hosts starting
+together download a model once.
+
+## opencode session
+
+`opencode` is pinned in `package.json`/`package-lock.json` (tracked by
+dependabot) and installed in a `node` build stage; only its standalone binary
+reaches the runtime image.
+
+At start the entrypoint runs `opencode-config`, which asks the server for its
+models (`/api/tags`, `/api/show`) and writes `~/.config/opencode/opencode.json`
+with an `@ai-sdk/openai-compatible` provider holding every model whose
+capabilities include `tools`. Each model's context limit is the smaller of its
+trained context and `OLLAMA_CONTEXT_LENGTH`, with a quarter reserved for output,
+so opencode compacts before a request outgrows what the server evaluates. The
+session refuses to start if `OPENAGENT_MODEL` is not among them.
+
+`AGENTS.md` is installed as opencode's global instructions.
+
+The session runs as the invoking identity (UID, `sw` group, home path) with
+umask `002`, and mounts the working directory, `/scratch`, the docker socket
+and, where present, `~/.gitconfig`, `~/.config/gh`, `~/.ssh` (read-only, with a
+writable `known_hosts.d`), `/etc/pip.conf` and the apt proxy config. Its `/tmp`
+is `/scratch/tmp/<name>`, emptied at start. Session state is discarded on exit.
+
+## Test
+
+`test/e2e.sh` runs `run.sh` against a small model on a CPU-only server under a
+throwaway scratch directory and checks the reply; CI runs it on every push.
