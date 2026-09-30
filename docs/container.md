@@ -18,7 +18,10 @@ The host is the docker daemon's name (`docker info`), not `hostname`, so a
 `run.sh` started inside another container still picks up the right
 `hosts/<host>.sh`. That file may override any variable set before it is sourced
 and append flags to `HOST_DOCKER_ARGS` (session) or `OLLAMA_DOCKER_ARGS`
-(server). `hosts/defroster.sh` gives the server `--gpus all`; the Ollama image
+(server). `hosts/defroster.sh` gives the server `--gpus all`;
+`hosts/hovercraft.sh` does the same and raises the default model to
+`qwen3.6:27b-coding` with a 128K context, which the 5090's 32GB holds because
+qwen3.6's KV cache covers only its full-attention layers; the Ollama image
 carries its own CUDA runtime, so only the host's `nvidia-container-toolkit` is
 required.
 
