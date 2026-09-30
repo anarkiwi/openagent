@@ -1,0 +1,75 @@
+# opencode session container, run as the invoking identity with its UID/GID
+# and home path so bind-mounted paths keep their ownership. The model server is
+# a separate container (Dockerfile.ollama) reached over a docker network.
+
+# The opencode npm package's postinstall links the platform's standalone
+# binary to bin/opencode.exe; only that binary is carried forward.
+FROM node:22-slim AS opencode
+WORKDIR /opencode
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund \
+    && ./node_modules/opencode-ai/bin/opencode.exe --version
+
+FROM ubuntu:24.04
+
+ARG CONTAINER_USER=claude
+ARG CONTAINER_GROUP=sw
+ARG UID=3001
+ARG GID=3001
+ARG DOCKER_GID=998
+ARG HOME_DIR=/home/claude
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# http transport so a caching proxy can serve hits; signed-by keyrings still
+# authenticate the packages.
+RUN sed -i 's|https://|http://|g' \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg git openssh-client ripgrep less jq \
+        python3 python3-pip python3-venv python3-dev build-essential \
+        pkg-config sudo black clang-format \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        -o /etc/apt/keyrings/docker.asc \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod a+r /etc/apt/keyrings/* \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] http://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ubuntu's default "ubuntu" user holds UID/GID 1000 and would collide with a
+# host-matched identity. The docker group takes the host's GID so the mounted
+# socket is usable.
+RUN userdel -r ubuntu 2>/dev/null || true; \
+    if ! getent group "${GID}" >/dev/null; then groupadd -g "${GID}" "${CONTAINER_GROUP}"; fi \
+    && useradd -l -m -u "${UID}" -g "${GID}" -d "${HOME_DIR}" -s /bin/bash "${CONTAINER_USER}" \
+    && echo "${CONTAINER_USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${CONTAINER_USER}" \
+    && chmod 0440 "/etc/sudoers.d/${CONTAINER_USER}" \
+    && if getent group "${DOCKER_GID}" >/dev/null; then \
+        usermod -aG "$(getent group "${DOCKER_GID}" | cut -d: -f1)" "${CONTAINER_USER}"; \
+    else \
+        groupadd -g "${DOCKER_GID}" docker && usermod -aG docker "${CONTAINER_USER}"; \
+    fi \
+    && sed -i 's/^UMASK.*/UMASK\t\t002/' /etc/login.defs \
+    && echo 'umask 002' > /etc/profile.d/umask.sh \
+    && printf '%s\n' \
+        'UserKnownHostsFile ~/.ssh/known_hosts.d/known_hosts ~/.ssh/known_hosts' \
+        > /etc/ssh/ssh_config.d/10-known-hosts.conf
+
+COPY --from=opencode /opencode/node_modules/opencode-ai/bin/opencode.exe /usr/local/bin/opencode
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=0755 opencode-config.sh /usr/local/bin/opencode-config
+
+USER ${CONTAINER_USER}
+COPY --chown=${UID}:${GID} AGENTS.md "${HOME_DIR}/.config/opencode/AGENTS.md"
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

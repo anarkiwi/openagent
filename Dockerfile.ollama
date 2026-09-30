@@ -1,0 +1,5 @@
+# Ollama server, shared by every opencode session on a host. run.sh runs it as
+# the invoking identity with its models under the shared scratch mount; umask
+# 002 keeps what it writes there writable by the other identity in the group.
+FROM ollama/ollama:0.35.0
+ENTRYPOINT ["/bin/sh", "-c", "umask 002 && exec /bin/ollama serve"]

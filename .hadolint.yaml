@@ -1,0 +1,6 @@
+# Unpinned apt versions: the image tracks the distribution's current packages.
+# USER is the build-arg-driven, host-matched name; a numeric UID would drop
+# the supplementary docker group.
+ignored:
+  - DL3008
+  - DL3066
