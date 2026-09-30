@@ -4,7 +4,7 @@
 
 # The opencode npm package's postinstall links the platform's standalone
 # binary to bin/opencode.exe; only that binary is carried forward.
-FROM node:22-slim AS opencode
+FROM node:26-slim AS opencode
 WORKDIR /opencode
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund \
