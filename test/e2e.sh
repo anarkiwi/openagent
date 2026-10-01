@@ -31,4 +31,8 @@ awk -v banner="> build · ${OPENAGENT_MODEL}" '
     index($0, banner) { seen = 1; next }
     seen && NF { reply = 1 }
     END { exit !reply }' "${OUT}/e2e.log"
+# The session's venv persists in its /tmp mount with the numeric stack in it.
+VENV="$(echo "${SCRATCH}"/tmp/openagent-*/venv)"
+docker run --rm -v "${VENV}:/tmp/venv:ro" --entrypoint /tmp/venv/bin/python \
+    "${IMAGE:-openagent:local}" -c 'import numpy, scipy, sklearn'
 echo ">> e2e ok" >&2
