@@ -24,6 +24,12 @@ jobs:
         env:
           SHELLCHECK_OPTS: -x
 
+  hosts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: test/hosts.sh
+
   e2e:
     runs-on: ubuntu-latest
     steps:
