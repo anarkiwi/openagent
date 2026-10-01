@@ -26,10 +26,22 @@ DOCKER_GID="$(getent group docker | cut -d: -f3)"
 
 # The host is the one whose daemon runs the containers, which is not
 # hostname when run.sh itself runs inside a container.
-HOST="$(docker info -f '{{.Name}}')"
+HOST="${OPENAGENT_HOST:-$(docker info -f '{{.Name}}')}"
 HOST="${HOST%%.*}"
 REPO_NAME="$(basename "$(pwd)")"
 NAME="openagent-${HOST}-${REPO_NAME}"
+
+# hosts/<hostname>.sh is sourced before the defaults below are applied, so it
+# can set its own defaults with ${VAR:-value} and the caller's environment
+# still wins over both. It may also append docker flags for the session
+# (HOST_DOCKER_ARGS) or the server (OLLAMA_DOCKER_ARGS), such as --gpus.
+HOST_DOCKER_ARGS=()
+OLLAMA_DOCKER_ARGS=()
+HOST_CONFIG="${SCRIPT_DIR}/hosts/${HOST}.sh"
+if [[ -f "${HOST_CONFIG}" ]]; then
+    # shellcheck disable=SC1090
+    source "${HOST_CONFIG}"
+fi
 
 SCRATCH="${SCRATCH:-/scratch}"
 OLLAMA_DIR="${OLLAMA_DIR:-${SCRATCH}/ollama}"
@@ -43,15 +55,14 @@ PIDS_LIMIT="${PIDS_LIMIT:-2048}"
 HOST_MEM_BYTES="$(free -b | awk '/^Mem:/{print $2}')"
 MEMORY_LIMIT="${MEMORY_LIMIT:-$(((HOST_MEM_BYTES - 1073741824) / 1048576))m}"
 
-# hosts/<hostname>.sh may override any of the above, and append docker flags
-# for the session (HOST_DOCKER_ARGS) or the server (OLLAMA_DOCKER_ARGS), such
-# as --gpus for the latter.
-HOST_DOCKER_ARGS=()
-OLLAMA_DOCKER_ARGS=()
-HOST_CONFIG="${SCRIPT_DIR}/hosts/${HOST}.sh"
-if [[ -f "${HOST_CONFIG}" ]]; then
-    # shellcheck disable=SC1090
-    source "${HOST_CONFIG}"
+# Print the resolved configuration and stop, without building or running.
+if [[ -n "${OPENAGENT_DRY_RUN:-}" ]]; then
+    for var in HOST OPENAGENT_MODEL OLLAMA_CONTEXT_LENGTH OLLAMA_KEEP_ALIVE OLLAMA_DIR; do
+        printf '%s=%s\n' "${var}" "${!var}"
+    done
+    printf 'HOST_DOCKER_ARGS=%s\nOLLAMA_DOCKER_ARGS=%s\n' \
+        "${HOST_DOCKER_ARGS[*]}" "${OLLAMA_DOCKER_ARGS[*]}"
+    exit 0
 fi
 
 # Docker has no notion of .gitignore; derive the .dockerignore from git so the

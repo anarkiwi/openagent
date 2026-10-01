@@ -14,10 +14,12 @@ port.
 
 ## Host
 
-The host is the docker daemon's name (`docker info`), not `hostname`, so a
-`run.sh` started inside another container still picks up the right
-`hosts/<host>.sh`. That file may override any variable set before it is sourced
-and append flags to `HOST_DOCKER_ARGS` (session) or `OLLAMA_DOCKER_ARGS`
+The host is the docker daemon's name (`docker info`, overridable with
+`OPENAGENT_HOST`), not `hostname`, so a `run.sh` started inside another
+container still picks up the right `hosts/<host>.sh`. That file is sourced
+before `run.sh` applies its defaults, so it sets its own with `${VAR:-value}`
+and the caller's environment still wins over both. It may also append flags to
+`HOST_DOCKER_ARGS` (session) or `OLLAMA_DOCKER_ARGS`
 (server). `hosts/defroster.sh` gives the server `--gpus all`;
 `hosts/hovercraft.sh` does the same and raises the default model to
 `qwen3.6:27b-coding` with a 128K context, which the 5090's 32GB holds because
@@ -75,6 +77,10 @@ state. Its `/tmp`
 is `/scratch/tmp/<name>`, emptied at start. Session state is discarded on exit.
 
 ## Test
+
+`OPENAGENT_DRY_RUN=1 ./run.sh` prints the resolved settings and exits without
+building or running anything. `test/hosts.sh` uses it to check that precedence
+for the files in `hosts/`.
 
 `test/e2e.sh` runs `run.sh` against a small model on a CPU-only server under a
 throwaway scratch directory and checks the reply; CI runs it on every push.
