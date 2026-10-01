@@ -22,8 +22,9 @@ and the caller's environment still wins over both. It may also append flags to
 `HOST_DOCKER_ARGS` (session) or `OLLAMA_DOCKER_ARGS`
 (server). `hosts/defroster.sh` gives the server `--gpus all`;
 `hosts/hovercraft.sh` does the same and raises the default model to
-`qwen3.6:27b-coding` with a 128K context, which the 5090's 32GB holds because
-qwen3.6's KV cache covers only its full-attention layers; the Ollama image
+`qwen3.6:27b-coding` with its full 256K context and a `q8_0` KV cache, which
+the 5090's 32GB holds because qwen3.6's KV cache covers only its
+full-attention layers; the Ollama image
 carries its own CUDA runtime, so only the host's `nvidia-container-toolkit` is
 required.
 
@@ -38,7 +39,8 @@ store, so either identity can pull into it. Settings:
 | `OLLAMA_CONTEXT_LENGTH` | `32768` | context the server evaluates; opencode's limits follow it |
 | `OLLAMA_KEEP_ALIVE` | `30m` | how long an idle model stays loaded |
 | `OLLAMA_NOPRUNE` | `1` | the store is shared across hosts, so a starting server must not delete blobs another host is still downloading |
-| `OLLAMA_FLASH_ATTENTION` | `1` | |
+| `OLLAMA_KV_CACHE_TYPE` | `f16` | `q8_0` halves the KV cache, for a longer context in the same memory |
+| `OLLAMA_FLASH_ATTENTION` | `1` | required by a quantized KV cache |
 | `OLLAMA_NO_CLOUD` | `1` | local models only |
 
 The server is replaced only when its image or run arguments change: a hash of
