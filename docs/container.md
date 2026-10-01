@@ -74,7 +74,17 @@ writable `known_hosts.d`), `/etc/pip.conf` and the apt proxy config.
 `GH_TOKEN` is passed through when set, as it is for the `openagent` identity,
 whose GitHub token comes from its shell environment rather than `gh` login
 state. Its `/tmp`
-is `/scratch/tmp/<name>`, emptied at start. Session state is discarded on exit.
+is `/scratch/tmp/<name>`, emptied at start apart from `/tmp/venv`. Session
+state is discarded on exit.
+
+`/tmp/venv` is a venv the entrypoint activates before starting opencode, so
+the agent's shell commands find `numpy`, `scipy`, `scikit-learn`, `setuptools`
+and `wheel` already importable. It is created on a session name's first run,
+recreated whenever its interpreter does not run, and topped up only when one
+of those imports fails, so a warm start costs one interpreter launch. Packages
+the agent installs into it persist across sessions. The image carries the
+compilers and headers (`build-essential`, `python3-dev`, `pkg-config`,
+`gfortran`) a source build needs.
 
 ## Test
 

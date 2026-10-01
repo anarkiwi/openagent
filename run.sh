@@ -154,10 +154,11 @@ if ! docker exec "${OLLAMA_NAME}" ollama show "${OPENAGENT_MODEL}" >/dev/null 2>
 fi
 
 # Host-backed /tmp, one directory per session name, emptied here so a session
-# never inherits the previous one's scratch.
+# never inherits the previous one's scratch. The venv the entrypoint keeps in
+# it is the one exception, so installed packages survive restarts.
 TMP_DIR="${SCRATCH}/tmp/${NAME}"
 mkdir -p "${TMP_DIR}"
-find "${TMP_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+find "${TMP_DIR}" -mindepth 1 -maxdepth 1 ! -name venv -exec rm -rf {} +
 
 # Optional host state, mounted only where it exists: docker would otherwise
 # materialise a missing source as a root-owned directory on the host.
