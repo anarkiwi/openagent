@@ -6,7 +6,7 @@
 # one opencode container per session, run as the invoking identity with its
 # UID/GID and home path so bind-mounted paths keep their ownership. The two
 # meet on a user-defined docker network, so the server is never published on
-# a host port.
+# a host port. The server is stopped when the last session on the host exits.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -118,16 +118,28 @@ OLLAMA_RUN_ARGS=(
 [[ -n "${OLLAMA_DEBUG_LOG_REQUESTS:-}" ]] &&
     OLLAMA_RUN_ARGS+=(-e "OLLAMA_DEBUG_LOG_REQUESTS=${OLLAMA_DEBUG_LOG_REQUESTS}")
 
+# The server runs only while the host has sessions: the last one to exit stops
+# it. Starting a server through to creating the session container, and the
+# exit check, hold one host-wide lock, so a session never counts as absent
+# while it is still starting.
+SERVER_LOCK="${OLLAMA_DIR}/.${OLLAMA_NAME}-${HOST}.lock"
+[[ -f "${SERVER_LOCK}" ]] || install -m 0664 /dev/null "${SERVER_LOCK}"
+exec 8>"${SERVER_LOCK}"
+flock 8
+
 # The server is shared, so it is replaced only when what it would be started
 # with has changed: the image or any of its run arguments. The spec is stored
 # as a label and compared, rather than recreating on every run and cutting off
-# the host's other sessions. The identity it runs as is left out: either one
-# writes the store group-writable, so which of them started it is immaterial.
+# the host's other sessions; a stopped server with the same spec is restarted.
+# The identity it runs as is left out: either one writes the store
+# group-writable, so which of them started it is immaterial.
 SPEC="$(printf '%s\n' "$(docker image inspect -f '{{.Id}}' "${OLLAMA_IMAGE}")" \
     "${OLLAMA_RUN_ARGS[@]}" | sha256sum | cut -c1-64)"
 RUNNING="$(docker inspect -f '{{.State.Running}} {{index .Config.Labels "openagent.spec"}}' \
     "${OLLAMA_NAME}" 2>/dev/null || true)"
-if [[ "${RUNNING}" != "true ${SPEC}" ]]; then
+if [[ "${RUNNING}" == "false ${SPEC}" ]]; then
+    docker start "${OLLAMA_NAME}" >/dev/null
+elif [[ "${RUNNING}" != "true ${SPEC}" ]]; then
     if [[ -n "${RUNNING}" ]]; then
         echo ">> replacing ${OLLAMA_NAME}" >&2
         docker rm -f "${OLLAMA_NAME}" >/dev/null
@@ -192,7 +204,7 @@ done < <(find /etc/apt/apt.conf.d -maxdepth 1 -iname '*proxy*' -print0 2>/dev/nu
 TTY=(-i)
 [[ -t 0 ]] && TTY=(-it)
 
-exec docker run --rm "${TTY[@]}" \
+docker create --rm "${TTY[@]}" \
     --name "${NAME}" \
     --init \
     --network "${NETWORK}" \
@@ -208,4 +220,15 @@ exec docker run --rm "${TTY[@]}" \
     "${MOUNTS[@]}" \
     -v "$(pwd):$(pwd)" \
     -w "$(pwd)" \
-    "${IMAGE}" "$@"
+    "${IMAGE}" "$@" >/dev/null
+flock -u 8
+
+STATUS=0
+docker start -ai "${NAME}" || STATUS=$?
+
+flock 8
+if ! docker ps -a --filter "network=${NETWORK}" --filter status=created \
+    --filter status=running --format '{{.Names}}' | grep -qvx "${OLLAMA_NAME}"; then
+    docker stop "${OLLAMA_NAME}" >/dev/null 2>&1 || true
+fi
+exit "${STATUS}"
