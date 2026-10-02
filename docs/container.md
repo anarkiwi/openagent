@@ -5,7 +5,7 @@ docker daemon it talks to.
 
 | Container | Image | Lifetime |
 | --- | --- | --- |
-| `openagent-ollama` | `Dockerfile.ollama` | one per host, `--restart unless-stopped`, shared by all sessions |
+| `openagent-ollama` | `Dockerfile.ollama` | one per host, shared by all sessions, stopped when the last one exits |
 | `openagent-<host>-<dir>` | `Dockerfile.opencode` | one per session, `--rm` |
 
 They share the user-defined docker network `openagent`; the session reaches the
@@ -45,8 +45,17 @@ store, so either identity can pull into it. Settings:
 
 The server is replaced only when its image or run arguments change: a hash of
 both is stored in the `openagent.spec` label and compared on every run, so a
-routine start never interrupts the host's other sessions. The identity is not
+routine start never interrupts the host's other sessions, and a stopped server
+with the same hash is restarted rather than recreated. The identity is not
 part of the hash.
+
+The server runs only while the host has sessions. When a session exits,
+`run.sh` stops the server unless another session container on the `openagent`
+network is created or running. Starting the server through to creating the
+session container, and that check, hold `flock` on
+`/scratch/ollama/.<server>-<host>.lock`, so a session still starting is never
+missed. The server keeps `--restart unless-stopped`, so one that was running
+when the host rebooted comes back and runs until the next session exits.
 
 Model pulls take an `flock` on `/scratch/ollama/.pull.lock`, so hosts starting
 together download a model once.
@@ -100,9 +109,11 @@ for the files in `hosts/`.
 
 `OLLAMA_DEBUG_LOG_REQUESTS=1 ./run.sh` starts the server with Ollama's request
 logging, which keeps every inference request body under the server
-container's `/tmp/ollama-request-logs-*`.
+container's `/tmp/ollama-request-logs-*`; `docker cp` retrieves them once the
+server has stopped.
 
 `test/e2e.sh` runs `run.sh` against a small model on a CPU-only server under a
 throwaway scratch directory, has it call a tool, checks the reply, and checks
 from the logged requests that the reasoning behind the tool call was sent back
-in the `reasoning` field; CI runs it on every push.
+in the `reasoning` field, and checks that the server stopped when the session
+exited; CI runs it on every push.
