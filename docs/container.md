@@ -62,7 +62,11 @@ models (`/api/tags`, `/api/show`) and writes `~/.config/opencode/opencode.json`
 with an `@ai-sdk/openai-compatible` provider holding every model whose
 capabilities include `tools`. Each model's context limit is the smaller of its
 trained context and `OLLAMA_CONTEXT_LENGTH`, with a quarter reserved for output,
-so opencode compacts before a request outgrows what the server evaluates. The
+so opencode compacts before a request outgrows what the server evaluates.
+Thinking models are marked `interleaved` with field `reasoning`: opencode
+otherwise returns earlier reasoning as `reasoning_content`, which Ollama's `/v1`
+endpoint ignores, so templates that keep the thinking of the current agent turn
+(qwen3.5/3.6) would see every earlier step with an empty think block. The
 session refuses to start if `OPENAGENT_MODEL` is not among them.
 
 `AGENTS.md` is installed as opencode's global instructions.
@@ -94,5 +98,11 @@ compilers and headers (`build-essential`, `python3-dev`, `pkg-config`,
 building or running anything. `test/hosts.sh` uses it to check that precedence
 for the files in `hosts/`.
 
+`OLLAMA_DEBUG_LOG_REQUESTS=1 ./run.sh` starts the server with Ollama's request
+logging, which keeps every inference request body under the server
+container's `/tmp/ollama-request-logs-*`.
+
 `test/e2e.sh` runs `run.sh` against a small model on a CPU-only server under a
-throwaway scratch directory and checks the reply; CI runs it on every push.
+throwaway scratch directory, has it call a tool, checks the reply, and checks
+from the logged requests that the reasoning behind the tool call was sent back
+in the `reasoning` field; CI runs it on every push.

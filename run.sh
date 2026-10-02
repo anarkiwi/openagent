@@ -114,6 +114,9 @@ OLLAMA_RUN_ARGS=(
     -e "OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}"
     "${OLLAMA_DOCKER_ARGS[@]}"
 )
+# Debugging aid: the server keeps every inference request body under its /tmp.
+[[ -n "${OLLAMA_DEBUG_LOG_REQUESTS:-}" ]] &&
+    OLLAMA_RUN_ARGS+=(-e "OLLAMA_DEBUG_LOG_REQUESTS=${OLLAMA_DEBUG_LOG_REQUESTS}")
 
 # The server is shared, so it is replaced only when what it would be started
 # with has changed: the image or any of its run arguments. The spec is stored

@@ -2,7 +2,9 @@
 # Run a one-shot opencode prompt through run.sh against its own Ollama server,
 # network and scratch directory. The assertions are on the plumbing, not the
 # wording of a small model's answer: opencode exits cleanly, the reply comes
-# from the requested Ollama model, and it is not empty.
+# from the requested Ollama model, and it is not empty, and once the model has
+# called a tool, the follow-up request carries its reasoning in the field
+# Ollama reads.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,6 +19,7 @@ export OLLAMA_NAME=openagent-ollama-e2e
 export NETWORK=openagent-e2e
 export OPENAGENT_MODEL="${E2E_MODEL:-qwen3:0.6b}"
 export OLLAMA_CONTEXT_LENGTH="${E2E_CONTEXT_LENGTH:-16384}"
+export OLLAMA_DEBUG_LOG_REQUESTS=1
 
 cleanup() {
     docker rm -f "${OLLAMA_NAME}" >/dev/null 2>&1 || true
@@ -25,12 +28,15 @@ cleanup() {
 trap cleanup EXIT
 
 cd "${ROOT}"
-./run.sh run "Reply with exactly the word PONG and nothing else." </dev/null 2>&1 |
+./run.sh run "Use the bash tool to run: echo PONG. Then reply with its output." </dev/null 2>&1 |
     sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' >"${OUT}/e2e.log"
 awk -v banner="> build · ${OPENAGENT_MODEL}" '
     index($0, banner) { seen = 1; next }
     seen && NF { reply = 1 }
     END { exit !reply }' "${OUT}/e2e.log"
+docker exec "${OLLAMA_NAME}" sh -c 'cat /tmp/ollama-request-logs-*/*v1_chat_completions_body.json' |
+    jq -se '[.[].messages[] | select(.role == "assistant" and .tool_calls)]
+        | length > 0 and all(.reasoning != null and .reasoning != "" and .reasoning_content == null)'
 # The session's venv persists in its /tmp mount with the numeric stack in it.
 VENV="$(echo "${SCRATCH}"/tmp/openagent-*/venv)"
 docker run --rm -v "${VENV}:/tmp/venv:ro" --entrypoint /tmp/venv/bin/python \

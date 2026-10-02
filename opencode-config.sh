@@ -7,6 +7,11 @@
 # the latter. A quarter of that is reserved for output: opencode compacts once
 # prompt plus reserved output would exceed the limit, which keeps a request
 # inside the window the server will actually evaluate.
+#
+# A thinking model's earlier reasoning is sent back in each assistant message's
+# "reasoning" field, the only one Ollama's /v1 endpoint reads, so a template
+# that keeps the thinking of the current agent turn renders it instead of an
+# empty think block.
 set -euo pipefail
 
 : "${OLLAMA_HOST:?}" "${OLLAMA_CONTEXT_LENGTH:?}" "${OPENAGENT_MODEL:?}"
@@ -27,11 +32,13 @@ curl -fsS "${BASE}/api/tags" | jq -r '.models[].name' |
         --argjson num_ctx "${OLLAMA_CONTEXT_LENGTH}" '
         map(select(.caps | index("tools"))
             | ([.ctx // $num_ctx, $num_ctx] | min) as $c
-            | {key: .name, value: {
+            | (.caps | index("thinking") != null) as $think
+            | {key: .name, value: ({
                 name: .name,
                 tool_call: true,
-                reasoning: (.caps | index("thinking") != null),
-                limit: {context: $c, output: ($c / 4 | floor)}}})
+                reasoning: $think,
+                limit: {context: $c, output: ($c / 4 | floor)}}
+                + if $think then {interleaved: {field: "reasoning"}} else {} end)})
         | from_entries as $models
         | {
             "$schema": "https://opencode.ai/config.json",
