@@ -22,9 +22,12 @@ and the caller's environment still wins over both. It may also append flags to
 `HOST_DOCKER_ARGS` (session) or `OLLAMA_DOCKER_ARGS`
 (server). `hosts/defroster.sh` gives the server `--gpus all`;
 `hosts/hovercraft.sh` does the same and raises the default model to
-`qwen3.6:27b-coding` with its full 256K context and a `q8_0` KV cache, which
-the 5090's 32GB holds because qwen3.6's KV cache covers only its
-full-attention layers; the Ollama image
+`qwen3.8:27b` with its full 256K context and a `q8_0` KV cache, which
+the 5090's 32GB holds because qwen3.8's KV cache covers only its
+full-attention layers. That tag's default sampling (temperature 1.0, top_p
+0.95, top_k 20) is the one Qwen evaluates agentic coding with, so no separate
+coding tag is needed, and it carries the multi-token prediction head Ollama
+uses for speculative decoding; the Ollama image
 carries its own CUDA runtime, so only the host's `nvidia-container-toolkit` is
 required.
 
@@ -75,7 +78,8 @@ so opencode compacts before a request outgrows what the server evaluates.
 Thinking models are marked `interleaved` with field `reasoning`: opencode
 otherwise returns earlier reasoning as `reasoning_content`, which Ollama's `/v1`
 endpoint ignores, so templates that keep the thinking of the current agent turn
-(qwen3.5/3.6) would see every earlier step with an empty think block. The
+(qwen3.5 onward) would see every earlier step with an empty think block.
+Models with the `vision` capability are marked as taking image attachments. The
 session refuses to start if `OPENAGENT_MODEL` is not among them.
 
 `AGENTS.md` is installed as opencode's global instructions.
