@@ -9,12 +9,13 @@ umask 002
 
 # A venv with the numeric stack, kept in the host-backed /tmp that run.sh
 # empties of everything else, and activated so opencode's shell commands use
-# it. It is recreated whenever its interpreter does not run (first start, a
-# half-written venv, a base image whose python moved), and the packages are
-# installed only when one fails to import. setuptools and wheel are explicit
-# because python3.12's ensurepip supplies neither.
+# it. It is recreated whenever its interpreter cannot import pip from it (first
+# start, a half-written venv, or a base image whose python version moved, which
+# leaves the venv's packages under a site-packages the new interpreter never
+# reads), and the packages are installed only when one fails to import.
+# setuptools and wheel are explicit because ensurepip supplies neither.
 VENV=/tmp/venv
-if ! "${VENV}/bin/python" -c '' 2>/dev/null; then
+if ! "${VENV}/bin/python" -c 'import pip' 2>/dev/null; then
     python3 -m venv --clear "${VENV}"
 fi
 # shellcheck disable=SC1091

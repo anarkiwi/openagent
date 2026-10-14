@@ -75,6 +75,9 @@ fi
         --directory 2>/dev/null || true
 } >"${SCRIPT_DIR}/.dockerignore"
 
+# The checkout belongs to one identity, so git refuses the others' build-time
+# commit lookup; the images do not use it.
+export BUILDX_GIT_INFO=0
 OLLAMA_IMAGE="openagent-ollama:local"
 IMAGE="${IMAGE:-openagent:local}"
 docker build -q -t "${OLLAMA_IMAGE}" -f "${SCRIPT_DIR}/Dockerfile.ollama" "${SCRIPT_DIR}" >/dev/null

@@ -28,6 +28,20 @@ cleanup() {
 trap cleanup EXIT
 
 cd "${ROOT}"
+# Seed the session's venv as one left by an image with another python: its
+# interpreter link and scripts still run, but its packages are under a
+# site-packages the current python never reads, so the entrypoint must rebuild
+# it rather than reach for its pip.
+STALE="${SCRATCH}/tmp/openagent-$(docker info -f '{{.Name}}' | cut -d. -f1)-$(basename "${ROOT}")/venv"
+rm -rf "${STALE}"
+mkdir -p "${STALE}/bin" "${STALE}/lib/python3.0/site-packages/pip"
+ln -s /usr/bin/python3 "${STALE}/bin/python"
+printf 'home = /usr/bin\ninclude-system-site-packages = false\nversion = 3.0.0\n' \
+    >"${STALE}/pyvenv.cfg"
+# shellcheck disable=SC2016
+printf 'export VIRTUAL_ENV=/tmp/venv PATH="/tmp/venv/bin:${PATH}"\n' >"${STALE}/bin/activate"
+printf '#!/tmp/venv/bin/python\nfrom pip._internal.cli.main import main\nmain()\n' >"${STALE}/bin/pip"
+chmod +x "${STALE}/bin/pip"
 ./run.sh run "Use the bash tool to run: echo PONG. Then reply with its output." </dev/null 2>&1 |
     sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' >"${OUT}/e2e.log"
 awk -v banner="> build · ${OPENAGENT_MODEL}" '
