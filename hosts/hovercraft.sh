@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hovercraft: RTX 5090 (32GB). Sourced by run.sh; see hosts/defroster.sh.
+# hovercraft: RTX 5090. Sourced by run.sh; see hosts/defroster.sh.
 #
 # qwen3.8 attends fully in only one layer in four, so with a q8_0 KV cache its
 # full trained 256K window costs no more than 128K at f16, and fits beside the

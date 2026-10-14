@@ -4,7 +4,8 @@
 # wording of a small model's answer: opencode exits cleanly, the reply comes
 # from the requested Ollama model, and it is not empty; once the model has
 # called a tool, the follow-up request carries its reasoning in the field
-# Ollama reads; and the server stops when the session, its only one, exits.
+# Ollama reads; the guards plugin denies a worktree outside the repo; and the
+# server stops when the session, its only one, exits.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,7 +33,8 @@ cd "${ROOT}"
 # interpreter link and scripts still run, but its packages are under a
 # site-packages the current python never reads, so the entrypoint must rebuild
 # it rather than reach for its pip.
-STALE="${SCRATCH}/tmp/openagent-$(docker info -f '{{.Name}}' | cut -d. -f1)-$(basename "${ROOT}")/venv"
+SESSION_TMP="${SCRATCH}/tmp/openagent-$(docker info -f '{{.Name}}' | cut -d. -f1)-$(basename "${ROOT}")"
+STALE="${SESSION_TMP}/venv"
 rm -rf "${STALE}"
 mkdir -p "${STALE}/bin" "${STALE}/lib/python3.0/site-packages/pip"
 ln -s /usr/bin/python3 "${STALE}/bin/python"
@@ -48,6 +50,12 @@ awk -v banner="> build · ${OPENAGENT_MODEL}" '
     index($0, banner) { seen = 1; next }
     seen && NF { reply = 1 }
     END { exit !reply }' "${OUT}/e2e.log"
+# The guards plugin runs in the session: the worktree guard denies a worktree
+# outside the repo and the model sees the reason in place of a result.
+./run.sh run "Use the bash tool to run: git worktree add /tmp/elsewhere. Then reply with its output." </dev/null 2>&1 |
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' >"${OUT}/e2e-guard.log"
+grep -q "worktrees must live inside the session's repo" "${OUT}/e2e-guard.log"
+[[ ! -e "${SESSION_TMP}/elsewhere" ]]
 [[ "$(docker inspect -f '{{.State.Running}}' "${OLLAMA_NAME}")" == false ]]
 rm -rf "${OUT}/server-tmp"
 docker cp -q "${OLLAMA_NAME}:/tmp" "${OUT}/server-tmp"
@@ -55,7 +63,7 @@ cat "${OUT}"/server-tmp/ollama-request-logs-*/*v1_chat_completions_body.json |
     jq -se '[.[].messages[] | select(.role == "assistant" and .tool_calls)]
         | length > 0 and all(.reasoning != null and .reasoning != "" and .reasoning_content == null)'
 # The session's venv persists in its /tmp mount with the numeric stack in it.
-VENV="$(echo "${SCRATCH}"/tmp/openagent-*/venv)"
+VENV="${SESSION_TMP}/venv"
 docker run --rm -v "${VENV}:/tmp/venv:ro" --entrypoint /tmp/venv/bin/python \
     "${IMAGE:-openagent:local}" -c 'import numpy, scipy, sklearn'
 echo ">> e2e ok" >&2

@@ -1,0 +1,158 @@
+# Hooks
+
+PreToolUse guards under `hooks/`, shared with the `claude` image. Each reads a
+Claude Code hook payload (`tool_name`, `cwd`, `tool_input`) on stdin and, on a
+violation, prints a `deny` decision; silence (exit 0, no output) allows the
+call. opencode has no such hook protocol, so `hooks/guards.js` supplies it.
+
+## guards.js
+
+An opencode plugin, installed in the image as
+`~/.config/opencode/plugins/guards.js`, which opencode loads at startup from
+that global directory. opencode installs `@opencode-ai/plugin` into that
+directory on startup when a plugin is present and `node_modules` is not, so
+the image ships the matching version there and a session never waits on the
+npm registry. Its `tool.execute.before` hook maps each tool call to
+the guard payload and runs the guards for that tool on the system `python3`:
+
+| opencode tool | Payload | Guards |
+| --- | --- | --- |
+| `bash` | `Bash` with `command`; `cwd` is `workdir` resolved against the session directory | `format_check`, `durable_comments`, `worktree_guard` |
+| `write` | `Write` with `file_path`, `content` | `min_comments` |
+| `edit` | `Edit` with `file_path`, `new_string` | `min_comments` |
+
+The guards run concurrently with `CLAUDE_PROJECT_DIR` set to the session
+directory. Every denial is collected and the hook throws their reasons joined,
+which opencode records as the tool call's error, so the model reads the
+directive and the fix instead of a result. A guard that fails to run (missing
+interpreter, module or script) throws too: a guard is never skipped.
+
+Two environment variables exist for the tests, which point them at the
+repository checkout: `OPENAGENT_GUARDS` (the guard directory, default
+`/usr/local/lib/openagent/guards`) and `OPENAGENT_GUARD_PYTHON` (default
+`/usr/bin/python3`, pinned to the system interpreter so the session venv never
+shadows `pygments`, installed from apt as `python3-pygments`).
+
+Tools with no guard listed, and `apply_patch` (which opencode offers only to
+GPT models), pass untouched.
+
+## min_comments.py
+
+Enforces the directive to minimize narrative comments in Python. Denies a write
+when the added text contains:
+
+- a docstring (module, class, or function) whose description exceeds one summary
+  line plus 3 lines of elaboration (PEP 257), or
+- a run of two or more consecutive full-line `#` comments.
+
+Docstrings are located with `ast`; only the free-text description is counted:
+Google- and NumPy-style sections (`Args`, `Returns`, `Raises`, `Parameters`,
+…) and blank lines are excluded. Comment runs are found with `tokenize` (inline
+trailing comments and comments separated by a blank line are allowed). Malformed
+payloads or unparseable fragments fall through to *allow*. Non-Python paths are
+ignored; `.py`, `.pyi` and `.ipynb` cells are scanned.
+
+## format_check.py
+
+Enforces the formatting CI checks, at commit time rather than after a push.
+Matches `git commit` in the `Bash` command (through `&&` chains, a preceding
+`cd`, and `git -C <dir>`) then reconstructs exactly what that commit would
+record and denies it if any file fails its formatter:
+
+| Suffix | Formatter |
+| --- | --- |
+| `.py`, `.pyi` | `black --check` |
+| `.c`, `.cc`, `.cpp`, `.cxx`, `.c++`, `.cu`, `.h`, `.hh`, `.hpp`, `.hxx`, `.h++`, `.cuh`, `.ipp`, `.inl` | `clang-format --dry-run -Werror --style=file --fallback-style=LLVM` |
+
+Content comes from the index, so a dirty worktree does not trigger a false
+denial; `-a`/`--all` and a trailing pathspec switch the affected files to their
+worktree content, matching what git would stage. Each file is piped to the
+formatter under its own path (`--stdin-filename`/`--assume-filename`), so
+`pyproject.toml` and `.clang-format` settings apply, falling back to LLVM style
+where a project ships no `.clang-format`. The deny names each failure and the
+command that fixes them all.
+
+Both formatters are installed from apt in the image, and CI installs the same
+packages so the two agree. A formatter missing from `PATH` is itself a denial:
+per directive, install it rather than skip the check. Unparseable commands,
+non-`Bash` calls, paths outside a repo, and unknown suffixes fall through to
+*allow*.
+
+## durable_comments.py
+
+Enforces the directive that a comment states what the code does and the
+invariant behind it, never a measurement or the story of how the code got here.
+Matches `git commit` in the `Bash` command with the same parsing as
+`format_check.py` (see [commits.py](#commitspy)), reconstructs the bytes that
+commit would record, and denies it when a comment or docstring carries:
+
+- a measured quantity: a number with a time, size, rate, power or throughput
+  unit (`30ms`, `4 GiB`, `900 Mbps`),
+- a speedup or ratio beside what it compares (`3x faster`, `4 times slower`);
+  a bare `1x` names a standard, so it passes,
+- a percentage claim (`40% faster`, `reduced by 10%`),
+- a date,
+- the story of an earlier version (`used to return`, `the old design`,
+  `previously ... now`); the purpose sense of `used to` passes,
+- a note about the author's process (`turns out`, `after trying`, `for now`),
+- a number beside a reporting word (`measured`, `benchmark`, `latency`, `p99`).
+
+Comments and docstrings are located by lexing each file with `pygments`, so
+every language it recognises is covered. Preprocessor lines and shebangs are
+code it happens to tag as comment and are skipped, as are prose suffixes
+(`.md`, `.rst`, `.txt`) and any file it has no lexer for.
+
+Spans that name something rather than measure it are blanked before the rules
+run: backticked symbols, URLs, `#123` issue references, version numbers and
+standards references (`RFC 2119`, `ISO 8601`). A backticked span is kept when it
+hides a quantity, so quoting does not launder one, and a licence or copyright
+header is exempt in full. The deny names each comment, what it records and
+where to move it: a measurement to docs, a change story to the commit message.
+
+The same code surveys paths given as arguments, which is how CI checks the
+tracked tree (`.github/workflows/ci.yml`):
+
+    python3 hooks/durable_comments.py $(git ls-files)           # exit 1 on a finding
+    python3 hooks/durable_comments.py $(git ls-files) --list    # report, exit 0
+
+## worktree_guard.py
+
+Enforces that a git worktree lives inside the repo the session started in, so
+branches stay beside their checkout instead of scattering across the shared
+filesystem. Walks the `Bash` command with the same parsing as the commit guards
+(`cd`, `git -C`, `&&` chains) and finds each `git worktree add <path>` and
+`git worktree move <worktree> <new-path>`, skipping the options that take a
+value (`-b`, `-B`, `--reason`) and honouring `--`. The target is resolved the
+way git would (against the cwd after any `-C`) then through `realpath`, so
+neither `..` nor a symlink escapes.
+
+The boundary is the main worktree of the repo holding `CLAUDE_PROJECT_DIR` (the
+payload `cwd` when that is unset), so a session started in a linked worktree may
+still create siblings within the same repo. A session started outside any repo
+is unconstrained. The deny names each offending command and its target, and
+points at `.worktrees/<branch>`, which must be gitignored; this repo ignores
+`/.worktrees/`.
+
+## commits.py
+
+Shared parsing rather than a guard of its own: every `Bash` guard imports it.
+`commands()` walks the command through `cd` and `&&` chains, yielding each
+simple command with the cwd it runs in, and `skip_git_options()` finds a git
+subcommand past `-C` and the other global options. `committed()` works out
+which files each `git commit` would record (index content, or worktree content
+under `-a`/`--all` and a trailing pathspec) and returns them as bytes, along
+with the `deny` payload the guards emit. The image copies it beside the guards
+under `/usr/local/lib/openagent/guards`, keeping its module name: that
+directory is the script directory, so it is on `sys.path` when a guard runs.
+
+## Testing
+
+    cd hooks
+    pytest -n auto --cov=min_comments --cov=format_check --cov=commits \
+        --cov=durable_comments --cov=worktree_guard --cov-fail-under=85
+    node --test guards.test.js
+
+The node tests point the plugin at this directory through `OPENAGENT_GUARDS`
+and run the guards on `OPENAGENT_GUARD_PYTHON` (default `python3`, which needs
+`pygments`). `black --check .` and `pylint` also run in CI
+(`.github/workflows/ci.yml`).

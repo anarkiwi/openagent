@@ -30,6 +30,44 @@ jobs:
       - uses: actions/checkout@v7
       - run: test/hosts.sh
 
+  hooks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hooks
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: sudo apt-get update && sudo apt-get install -y clang-format
+      - run: pip install black pytest pytest-xdist pytest-cov pylint pygments
+      - run: black --check .
+      - run: pylint ./*.py
+      - run: >-
+          pytest -n auto --cov=min_comments --cov=format_check --cov=commits
+          --cov=durable_comments --cov=worktree_guard --cov-fail-under=85
+      - run: >-
+          node --test --experimental-test-coverage --test-coverage-lines=85
+          --test-coverage-include=guards.js guards.test.js
+        env:
+          OPENAGENT_GUARD_PYTHON: python3
+
+  comments:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install pygments
+      # The commit guard, run over the tracked tree: a stale comment anywhere in
+      # the repo fails the job.
+      - run: python3 hooks/durable_comments.py $(git ls-files)
+
   e2e:
     runs-on: ubuntu-latest
     steps:
