@@ -100,8 +100,9 @@ state is discarded on exit.
 `/tmp/venv` is a venv the entrypoint activates before starting opencode, so
 the agent's shell commands find `numpy`, `scipy`, `scikit-learn`, `setuptools`
 and `wheel` already importable. It is created on a session name's first run,
-recreated whenever its interpreter does not run, and topped up only when one
-of those imports fails, so a warm start costs one interpreter launch. Packages
+recreated whenever its interpreter cannot import pip from it (as after a base
+image moves to a new python version), and topped up only when one
+of those imports fails, so a warm start costs two interpreter launches. Packages
 the agent installs into it persist across sessions. The image carries the
 compilers and headers (`build-essential`, `python3-dev`, `pkg-config`,
 `gfortran`) a source build needs.
