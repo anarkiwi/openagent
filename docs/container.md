@@ -88,8 +88,10 @@ session refuses to start if `OPENAGENT_MODEL` is not among them.
 The session runs as the invoking identity (UID, `sw` group, home path), which
 must be one of `OPENAGENT_USERS` (default `claude ansible openagent`): accounts
 with the same UID on every host and `sw` as primary group. It uses umask `002`
-and mounts the working directory, `/scratch`, the docker socket
-and, where present, `~/.gitconfig`, `~/.config/gh`, `~/.ssh` (read-only, with a
+and mounts the working directory, the docker socket and, where present, each of
+`OPENAGENT_MOUNTS` (whitespace-separated host paths mounted at the same path,
+default `/scratch/openagent /scratch/tmp /scratch/datasets`; settable in a host
+file), `~/.gitconfig`, `~/.config/gh`, `~/.ssh` (read-only, with a
 writable `known_hosts.d`), `/etc/pip.conf` and the apt proxy config.
 `GH_TOKEN` is passed through when set, as it is for the `openagent` identity,
 whose GitHub token comes from its shell environment rather than `gh` login
