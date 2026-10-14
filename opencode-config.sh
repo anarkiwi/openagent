@@ -12,6 +12,9 @@
 # "reasoning" field, the only one Ollama's /v1 endpoint reads, so a template
 # that keeps the thinking of the current agent turn renders it instead of an
 # empty think block.
+#
+# A model with the vision capability takes image attachments, which the /v1
+# endpoint accepts as image_url parts.
 set -euo pipefail
 
 : "${OLLAMA_HOST:?}" "${OLLAMA_CONTEXT_LENGTH:?}" "${OPENAGENT_MODEL:?}"
@@ -33,12 +36,16 @@ curl -fsS "${BASE}/api/tags" | jq -r '.models[].name' |
         map(select(.caps | index("tools"))
             | ([.ctx // $num_ctx, $num_ctx] | min) as $c
             | (.caps | index("thinking") != null) as $think
+            | (.caps | index("vision") != null) as $vision
             | {key: .name, value: ({
                 name: .name,
                 tool_call: true,
                 reasoning: $think,
                 limit: {context: $c, output: ($c / 4 | floor)}}
-                + if $think then {interleaved: {field: "reasoning"}} else {} end)})
+                + if $think then {interleaved: {field: "reasoning"}} else {} end
+                + if $vision then {attachment: true,
+                    modalities: {input: ["text", "image"], output: ["text"]}}
+                  else {} end)})
         | from_entries as $models
         | {
             "$schema": "https://opencode.ai/config.json",

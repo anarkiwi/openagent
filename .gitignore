@@ -2,3 +2,4 @@
 /.dockerignore
 /test/out/
 /.worktrees/
+/.claude/
