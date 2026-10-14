@@ -83,7 +83,10 @@ endpoint ignores, so templates that keep the thinking of the current agent turn
 Models with the `vision` capability are marked as taking image attachments. The
 session refuses to start if `OPENAGENT_MODEL` is not among them.
 
-`AGENTS.md` is installed as opencode's global instructions.
+`AGENTS.md` is installed as opencode's global instructions, and
+`hooks/guards.js` as a global opencode plugin that runs the PreToolUse guards
+under `/usr/local/lib/openagent/guards` before each `bash`, `write` and `edit`
+call (see [hooks.md](hooks.md)).
 
 The session runs as the invoking identity (UID, `sw` group, home path), which
 must be one of `OPENAGENT_USERS` (default `claude ansible openagent`): accounts
