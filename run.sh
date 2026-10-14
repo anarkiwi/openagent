@@ -45,6 +45,8 @@ fi
 
 SCRATCH="${SCRATCH:-/scratch}"
 OLLAMA_DIR="${OLLAMA_DIR:-${SCRATCH}/ollama}"
+# Directories the session sees at their host paths, whitespace-separated.
+OPENAGENT_MOUNTS="${OPENAGENT_MOUNTS:-${SCRATCH}/openagent ${SCRATCH}/tmp ${SCRATCH}/datasets}"
 OLLAMA_NAME="${OLLAMA_NAME:-openagent-ollama}"
 NETWORK="${NETWORK:-openagent}"
 OPENAGENT_MODEL="${OPENAGENT_MODEL:-qwen3:4b}"
@@ -59,7 +61,7 @@ MEMORY_LIMIT="${MEMORY_LIMIT:-$(((HOST_MEM_BYTES - 1073741824) / 1048576))m}"
 # Print the resolved configuration and stop, without building or running.
 if [[ -n "${OPENAGENT_DRY_RUN:-}" ]]; then
     for var in HOST OPENAGENT_MODEL OLLAMA_CONTEXT_LENGTH OLLAMA_KV_CACHE_TYPE \
-        OLLAMA_KEEP_ALIVE OLLAMA_DIR; do
+        OLLAMA_KEEP_ALIVE OLLAMA_DIR OPENAGENT_MOUNTS; do
         printf '%s=%s\n' "${var}" "${!var}"
     done
     printf 'HOST_DOCKER_ARGS=%s\nOLLAMA_DOCKER_ARGS=%s\n' \
@@ -179,13 +181,20 @@ mkdir -p "${TMP_DIR}"
 find "${TMP_DIR}" -mindepth 1 -maxdepth 1 ! -name venv -exec rm -rf {} +
 
 # Optional host state, mounted only where it exists: docker would otherwise
-# materialise a missing source as a root-owned directory on the host.
+# materialise a missing source as a root-owned directory on the host. Each
+# target is mounted once, as docker refuses a duplicate mount point.
 MOUNTS=()
+declare -A MOUNTED=([/tmp]=1)
 mount_if() {
-    [[ -e "$1" ]] && MOUNTS+=(-v "$1:$1${2:+:$2}")
-    return 0
+    [[ -e "$1" && -z "${MOUNTED[$1]:-}" ]] || return 0
+    MOUNTED[$1]=1
+    MOUNTS+=(-v "$1:$1${2:+:$2}")
 }
-mount_if "${SCRATCH}"
+mount_if "$(pwd)"
+read -ra paths <<<"${OPENAGENT_MOUNTS}"
+for path in "${paths[@]}"; do
+    mount_if "${path}"
+done
 mount_if /etc/pip.conf ro
 mount_if /etc/apt/apt.conf ro
 mount_if "${HOME}/.gitconfig" ro
@@ -218,7 +227,6 @@ docker create --rm "${TTY[@]}" \
     -v "${TMP_DIR}:/tmp" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     "${MOUNTS[@]}" \
-    -v "$(pwd):$(pwd)" \
     -w "$(pwd)" \
     "${IMAGE}" "$@" >/dev/null
 flock -u 8

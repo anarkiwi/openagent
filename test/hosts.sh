@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OPENAGENT_USERS="$(id -un)"
 CONTAINER_GROUP="$(id -gn)"
 export OPENAGENT_USERS CONTAINER_GROUP OPENAGENT_DRY_RUN=1
-unset OPENAGENT_MODEL OLLAMA_CONTEXT_LENGTH OLLAMA_KV_CACHE_TYPE
+unset OPENAGENT_MODEL OLLAMA_CONTEXT_LENGTH OLLAMA_KV_CACHE_TYPE OPENAGENT_MOUNTS SCRATCH
 
 resolve() {
     env "$@" "${ROOT}/run.sh"
@@ -34,4 +34,7 @@ expect 'OLLAMA_DOCKER_ARGS=--gpus all' OPENAGENT_HOST=hovercraft
 expect OPENAGENT_MODEL=qwen3:8b OPENAGENT_HOST=hovercraft OPENAGENT_MODEL=qwen3:8b
 expect OLLAMA_CONTEXT_LENGTH=8192 OPENAGENT_HOST=hovercraft OLLAMA_CONTEXT_LENGTH=8192
 expect OPENAGENT_MODEL=qwen3:4b OPENAGENT_HOST=defroster
+expect 'OPENAGENT_MOUNTS=/scratch/openagent /scratch/tmp /scratch/datasets' \
+    OPENAGENT_HOST=nohostfile
+expect 'OPENAGENT_MOUNTS=/data /models' OPENAGENT_HOST=nohostfile 'OPENAGENT_MOUNTS=/data /models'
 echo ">> hosts ok" >&2
