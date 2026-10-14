@@ -33,9 +33,11 @@ required.
 
 ## Ollama server
 
-Runs as the invoking identity with `HOME` and `OLLAMA_MODELS` under
-`/scratch/ollama` (`OLLAMA_DIR`), with umask `002` and a setgid, group-writable
-store, so either identity can pull into it. Settings:
+Runs with `HOME` and `OLLAMA_MODELS` under `/scratch/ollama` (`OLLAMA_DIR`),
+as the owner of `/scratch/ollama/models` whichever identity starts it. Ollama
+creates some of the store (`manifests-v2`, its metadata cache) with fixed
+owner-only modes, so a single writing identity is what keeps it usable from
+every account. Settings:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
@@ -49,8 +51,7 @@ store, so either identity can pull into it. Settings:
 The server is replaced only when its image or run arguments change: a hash of
 both is stored in the `openagent.spec` label and compared on every run, so a
 routine start never interrupts the host's other sessions, and a stopped server
-with the same hash is restarted rather than recreated. The identity is not
-part of the hash.
+with the same hash is restarted rather than recreated.
 
 The server runs only while the host has sessions. When a session exits,
 `run.sh` stops the server unless another session container on the `openagent`

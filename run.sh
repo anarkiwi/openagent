@@ -90,18 +90,18 @@ docker build \
 docker network inspect "${NETWORK}" >/dev/null 2>&1 ||
     docker network create "${NETWORK}" >/dev/null
 
-# Group-writable and setgid, so weights pulled by one identity stay usable by
-# the other. Failure is ignored: it means the directory belongs to the other
-# identity, which already set it.
+# The server runs as the store's owner whichever identity starts it: Ollama
+# creates parts of the store with fixed owner-only modes, so a second writing
+# identity would be locked out of them.
 mkdir -p "${OLLAMA_DIR}/models"
-chgrp "${CONTAINER_GROUP}" "${OLLAMA_DIR}" "${OLLAMA_DIR}/models" 2>/dev/null || true
-chmod g+ws "${OLLAMA_DIR}" "${OLLAMA_DIR}/models" 2>/dev/null || true
+STORE_OWNER="$(stat -c %u:%g "${OLLAMA_DIR}/models")"
 
 # Several hosts serve from the one models directory, so no server may prune
 # blobs it does not recognise: they may be another host's download in flight.
 OLLAMA_RUN_ARGS=(
     --network "${NETWORK}"
     --restart unless-stopped
+    --user "${STORE_OWNER}"
     -v "${OLLAMA_DIR}:${OLLAMA_DIR}"
     -e "HOME=${OLLAMA_DIR}"
     -e "OLLAMA_MODELS=${OLLAMA_DIR}/models"
@@ -131,8 +131,6 @@ flock 8
 # with has changed: the image or any of its run arguments. The spec is stored
 # as a label and compared, rather than recreating on every run and cutting off
 # the host's other sessions; a stopped server with the same spec is restarted.
-# The identity it runs as is left out: either one writes the store
-# group-writable, so which of them started it is immaterial.
 SPEC="$(printf '%s\n' "$(docker image inspect -f '{{.Id}}' "${OLLAMA_IMAGE}")" \
     "${OLLAMA_RUN_ARGS[@]}" | sha256sum | cut -c1-64)"
 RUNNING="$(docker inspect -f '{{.State.Running}} {{index .Config.Labels "openagent.spec"}}' \
@@ -145,7 +143,6 @@ elif [[ "${RUNNING}" != "true ${SPEC}" ]]; then
         docker rm -f "${OLLAMA_NAME}" >/dev/null
     fi
     docker run -d --name "${OLLAMA_NAME}" --label "openagent.spec=${SPEC}" \
-        --user "${CONTAINER_UID}:${CONTAINER_GID}" \
         "${OLLAMA_RUN_ARGS[@]}" "${OLLAMA_IMAGE}" >/dev/null
 fi
 
