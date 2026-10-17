@@ -41,7 +41,7 @@ every account. Settings:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `OLLAMA_CONTEXT_LENGTH` | `32768` | context the server evaluates; opencode's limits follow it |
+| `OLLAMA_CONTEXT_LENGTH` | `32768` | context the server evaluates, capped at the model's trained context; opencode's limits follow it |
 | `OLLAMA_KEEP_ALIVE` | `30m` | how long an idle model stays loaded |
 | `OLLAMA_NOPRUNE` | `1` | the store is shared across hosts, so a starting server must not delete blobs another host is still downloading |
 | `OLLAMA_KV_CACHE_TYPE` | `f16` | `q8_0` halves the KV cache, for a longer context in the same memory |
@@ -87,6 +87,11 @@ session refuses to start if `OPENAGENT_MODEL` is not among them.
 `hooks/guards.js` as a global opencode plugin that runs the PreToolUse guards
 under `/usr/local/lib/openagent/guards` before each `bash`, `write` and `edit`
 call (see [hooks.md](hooks.md)).
+
+The TUI and `opencode run` start with `--auto`, so permission requests (such as
+reaching outside the working directory, or reading a `.env` file) are approved
+without a prompt unless a rule denies them; the guards still veto calls. Other
+subcommands do not accept the flag and are passed through unchanged.
 
 The session runs as the invoking identity (UID, `sw` group, home path), which
 must be one of `OPENAGENT_USERS` (default `claude ansible openagent`): accounts

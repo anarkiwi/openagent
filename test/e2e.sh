@@ -4,8 +4,9 @@
 # wording of a small model's answer: opencode exits cleanly, the reply comes
 # from the requested Ollama model, and it is not empty; once the model has
 # called a tool, the follow-up request carries its reasoning in the field
-# Ollama reads; the guards plugin denies a worktree outside the repo; and the
-# server stops when the session, its only one, exits.
+# Ollama reads; the guards plugin denies a worktree outside the repo; a
+# permission request is auto-approved; and the server stops when the session,
+# its only one, exits.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,6 +57,12 @@ awk -v banner="> build · ${OPENAGENT_MODEL}" '
     sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' >"${OUT}/e2e-guard.log"
 grep -q "worktrees must live inside the session's repo" "${OUT}/e2e-guard.log"
 [[ ! -e "${SESSION_TMP}/elsewhere" ]]
+# Permissions are auto-approved: cat outside the working directory asks for
+# external_directory, which run would otherwise reject.
+./run.sh run "Use the bash tool to run: cat /etc/os-release. Then reply with its output." </dev/null 2>&1 |
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' >"${OUT}/e2e-auto.log"
+grep -q "VERSION_CODENAME" "${OUT}/e2e-auto.log"
+if grep -q "auto-rejecting" "${OUT}/e2e-auto.log"; then exit 1; fi
 [[ "$(docker inspect -f '{{.State.Running}}' "${OLLAMA_NAME}")" == false ]]
 rm -rf "${OUT}/server-tmp"
 docker cp -q "${OLLAMA_NAME}:/tmp" "${OUT}/server-tmp"
