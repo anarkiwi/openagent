@@ -42,7 +42,7 @@ every account. Settings:
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `OLLAMA_CONTEXT_LENGTH` | `32768` | context the server evaluates, capped at the model's trained context; opencode's limits follow it |
-| `OLLAMA_KEEP_ALIVE` | `30m` | how long an idle model stays loaded |
+| `OLLAMA_KEEP_ALIVE` | `-1` | how long an idle model stays loaded; `-1` keeps it until the server stops with the host's last session |
 | `OLLAMA_NOPRUNE` | `1` | the store is shared across hosts, so a starting server must not delete blobs another host is still downloading |
 | `OLLAMA_KV_CACHE_TYPE` | `f16` | `q8_0` halves the KV cache, for a longer context in the same memory |
 | `OLLAMA_FLASH_ATTENTION` | `1` | required by a quantized KV cache |
@@ -74,12 +74,17 @@ At start the entrypoint runs `opencode-config`, which asks the server for its
 models (`/api/tags`, `/api/show`) and writes `~/.config/opencode/opencode.json`
 with an `@ai-sdk/openai-compatible` provider holding every model whose
 capabilities include `tools`. Each model's context limit is the smaller of its
-trained context and `OLLAMA_CONTEXT_LENGTH`, with a quarter reserved for output,
+trained context and `OLLAMA_CONTEXT_LENGTH`, with `OPENAGENT_OUTPUT_LIMIT`
+(default `32768`), or a quarter of the context if smaller, reserved for output,
 so opencode compacts before a request outgrows what the server evaluates.
 Thinking models are marked `interleaved` with field `reasoning`: opencode
 otherwise returns earlier reasoning as `reasoning_content`, which Ollama's `/v1`
 endpoint ignores, so templates that keep the thinking of the current agent turn
 (qwen3.5 onward) would see every earlier step with an empty think block.
+Thinking models that name their levels (`/api/show` `thinking.values`, such as
+qwen3.8's `low`, `medium`, `xhigh`) get one opencode variant per level, sent as
+`reasoning_effort`, and default to `OPENAGENT_THINK` (default `xhigh`) where the
+model has that level; the server silently ignores a level a model lacks.
 Models with the `vision` capability are marked as taking image attachments. The
 session refuses to start if `OPENAGENT_MODEL` is not among them.
 
