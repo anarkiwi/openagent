@@ -31,4 +31,12 @@ if ! jq -e '.model' "${CONFIG}" >/dev/null; then
     exit 1
 fi
 
+# Permission requests are auto-approved unless a rule denies them; the guards
+# plugin still vetoes each call. Only the TUI and run take --auto, and the
+# other subcommands reject it.
+case "${1:-}" in
+    run) set -- run --auto "${@:2}" ;;
+    "" | -*) set -- --auto "$@" ;;
+esac
+
 exec opencode "$@"
