@@ -20,16 +20,29 @@ container still picks up the right `hosts/<host>.sh`. That file is sourced
 before `run.sh` applies its defaults, so it sets its own with `${VAR:-value}`
 and the caller's environment still wins over both. It may also append flags to
 `HOST_DOCKER_ARGS` (session) or `OLLAMA_DOCKER_ARGS`
-(server). `hosts/defroster.sh` gives the server `--gpus all`;
-`hosts/hovercraft.sh` does the same and raises the default model to
-`qwen3.8:27b` with its full 256K context and a `q8_0` KV cache, which
-the 5090's 32GB holds because qwen3.8's KV cache covers only its
-full-attention layers. That tag's default sampling (temperature 1.0, top_p
-0.95, top_k 20) is the one Qwen evaluates agentic coding with, so no separate
-coding tag is needed, and it carries the multi-token prediction head Ollama
-uses for speculative decoding; the Ollama image
-carries its own CUDA runtime, so only the host's `nvidia-container-toolkit` is
-required.
+(server). Each host file sets the model, its window and KV cache type, the
+output reserve and thinking effort for its GPU, and gives the server
+`--gpus all`; the Ollama image carries its own CUDA runtime, so only the
+host's `nvidia-container-toolkit` is required.
+
+| Host | GPU | Model | Context | KV cache |
+| --- | --- | --- | --- | --- |
+| hovercraft | RTX 5090 | `qwen3.8:27b` | 256K (trained) | `q8_0` |
+| defroster | RTX 5080 | `qwen3.8:27b` | 128K | `q8_0` |
+| other | none | `qwen3:4b` | 32K | `f16` |
+
+On hovercraft the whole of `qwen3.8:27b` and its full 256K window fit in the
+5090's 32GB, because qwen3.8's KV cache covers only its full-attention layers.
+That tag's default sampling (temperature 1.0, top_p 0.95, top_k 20) is the one
+Qwen evaluates agentic coding with, so no separate coding tag is needed, and it
+carries the multi-token prediction head Ollama uses for speculative decoding.
+
+defroster runs the same model for its quality, not its speed: the weights
+alone exceed the 5080's 16GB, so Ollama places the layers that do not fit, and
+their KV cache, in host memory, where they run on the CPU. A larger window
+moves more of the model off the GPU, so defroster takes half the trained
+window. Smaller models that fit entirely (such as `qwen3.5:9b`) are faster but
+markedly weaker agents.
 
 ## Ollama server
 
@@ -127,6 +140,11 @@ compilers and headers (`build-essential`, `python3-dev`, `pkg-config`,
 `OPENAGENT_DRY_RUN=1 ./run.sh` prints the resolved settings and exits without
 building or running anything. `test/hosts.sh` uses it to check that precedence
 for the files in `hosts/`.
+
+`test/bench.sh MODEL@CTX ...` loads each model at that context on the host's
+running server (`OLLAMA_NAME`) and prints its resident size, the share of it
+in VRAM, and its prefill and decode rates, for choosing a host file's
+settings.
 
 `OLLAMA_DEBUG_LOG_REQUESTS=1 ./run.sh` starts the server with Ollama's request
 logging, which keeps every inference request body under the server
