@@ -34,11 +34,15 @@ expect OLLAMA_KV_CACHE_TYPE=q8_0 OPENAGENT_HOST=hovercraft
 expect 'OLLAMA_DOCKER_ARGS=--gpus all' OPENAGENT_HOST=hovercraft
 expect OPENAGENT_MODEL=qwen3:8b OPENAGENT_HOST=hovercraft OPENAGENT_MODEL=qwen3:8b
 expect OLLAMA_CONTEXT_LENGTH=8192 OPENAGENT_HOST=hovercraft OLLAMA_CONTEXT_LENGTH=8192
-expect OPENAGENT_MODEL=qwen3:4b OPENAGENT_HOST=defroster
+expect OPENAGENT_MODEL=qwen3.8:27b OPENAGENT_HOST=defroster
+expect OLLAMA_CONTEXT_LENGTH=131072 OPENAGENT_HOST=defroster
+expect OLLAMA_KV_CACHE_TYPE=q8_0 OPENAGENT_HOST=defroster
+expect 'OLLAMA_DOCKER_ARGS=--gpus all' OPENAGENT_HOST=defroster
 expect OLLAMA_KEEP_ALIVE=-1 OPENAGENT_HOST=nohostfile
 expect OPENAGENT_OUTPUT_LIMIT=32768 OPENAGENT_HOST=nohostfile
 expect OPENAGENT_THINK=xhigh OPENAGENT_HOST=nohostfile
 expect OPENAGENT_THINK=low OPENAGENT_HOST=hovercraft OPENAGENT_THINK=low
+expect OPENAGENT_THINK=xhigh OPENAGENT_HOST=defroster
 expect 'OPENAGENT_MOUNTS=/scratch/openagent /scratch/tmp /scratch/datasets' \
     OPENAGENT_HOST=nohostfile
 expect 'OPENAGENT_MOUNTS=/data /models' OPENAGENT_HOST=nohostfile 'OPENAGENT_MOUNTS=/data /models'
