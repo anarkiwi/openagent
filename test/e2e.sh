@@ -23,11 +23,18 @@ export OPENAGENT_MODEL="${E2E_MODEL:-qwen3:0.6b}"
 export OLLAMA_CONTEXT_LENGTH="${E2E_CONTEXT_LENGTH:-16384}"
 export OLLAMA_DEBUG_LOG_REQUESTS=1
 
+# The server's log and request bodies are kept under test/out, which CI
+# uploads when a check fails.
 cleanup() {
+    docker logs "${OLLAMA_NAME}" >"${OUT}/server.log" 2>&1 || true
+    [[ -d "${OUT}/server-tmp" ]] ||
+        docker cp -q "${OLLAMA_NAME}:/tmp" "${OUT}/server-tmp" 2>/dev/null || true
     docker rm -f "${OLLAMA_NAME}" >/dev/null 2>&1 || true
     docker network rm "${NETWORK}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+trap 'echo "!! e2e failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+rm -rf "${OUT}/server-tmp"
 
 cd "${ROOT}"
 # Seed the session's venv as one left by an image with another python: its
@@ -64,7 +71,6 @@ grep -q "worktrees must live inside the session's repo" "${OUT}/e2e-guard.log"
 grep -q "VERSION_CODENAME" "${OUT}/e2e-auto.log"
 if grep -q "auto-rejecting" "${OUT}/e2e-auto.log"; then exit 1; fi
 [[ "$(docker inspect -f '{{.State.Running}}' "${OLLAMA_NAME}")" == false ]]
-rm -rf "${OUT}/server-tmp"
 docker cp -q "${OLLAMA_NAME}:/tmp" "${OUT}/server-tmp"
 cat "${OUT}"/server-tmp/ollama-request-logs-*/*v1_chat_completions_body.json |
     jq -se '[.[].messages[] | select(.role == "assistant" and .tool_calls)]
