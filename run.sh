@@ -56,6 +56,7 @@ OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
 OPENAGENT_OUTPUT_LIMIT="${OPENAGENT_OUTPUT_LIMIT:-32768}"
 OPENAGENT_THINK="${OPENAGENT_THINK:-xhigh}"
 OPENAGENT_VISION="${OPENAGENT_VISION:-}"
+OPENAGENT_DRAFT="${OPENAGENT_DRAFT:-}"
 
 PIDS_LIMIT="${PIDS_LIMIT:-2048}"
 HOST_MEM_BYTES="$(free -b | awk '/^Mem:/{print $2}')"
@@ -65,7 +66,7 @@ MEMORY_LIMIT="${MEMORY_LIMIT:-$(((HOST_MEM_BYTES - 1073741824) / 1048576))m}"
 if [[ -n "${OPENAGENT_DRY_RUN:-}" ]]; then
     for var in HOST OPENAGENT_MODEL OLLAMA_CONTEXT_LENGTH OLLAMA_KV_CACHE_TYPE \
         OLLAMA_KEEP_ALIVE OPENAGENT_OUTPUT_LIMIT OPENAGENT_THINK OPENAGENT_VISION \
-        OLLAMA_DIR OPENAGENT_MOUNTS; do
+        OPENAGENT_DRAFT OLLAMA_DIR OPENAGENT_MOUNTS; do
         printf '%s=%s\n' "${var}" "${!var}"
     done
     printf 'HOST_DOCKER_ARGS=%s\nOLLAMA_DOCKER_ARGS=%s\n' \
@@ -193,22 +194,38 @@ TTY=()
 ensure_model "${OPENAGENT_MODEL}" \
     docker exec "${TTY[@]}" "${OLLAMA_NAME}" ollama pull "${OPENAGENT_MODEL}"
 
-# Unless OPENAGENT_VISION is set, a model carrying a vision projector is served
-# as a text-only copy sharing its blobs, so the projector's VRAM goes to layers
-# instead. "ollama show" writes the weights as the Modelfile's first FROM and
-# each projector as a later one.
+# A model is served as a copy sharing its blobs, without what the session does
+# not need: unless OPENAGENT_VISION is set, its vision projector ("-text"), and
+# unless OPENAGENT_DRAFT is set, its multi-token prediction draft ("-nodraft"),
+# so their VRAM goes to layers instead. "ollama show" writes the weights as the
+# Modelfile's first FROM and each projector as a later one; a draft_num_predict
+# of 0 starts the server without speculative decoding.
 # shellcheck disable=SC2317,SC2329 # invoked through ensure_model
-text_only() {
+derive() {
     docker exec "${OLLAMA_NAME}" ollama show --modelfile "$1" |
-        awk 'f || !/^(FROM |#|$)/ {f = 1} f || !/^FROM / || !n++' |
+        awk -v proj="$3" -v draft="$4" '
+            f || !/^(FROM |#|$)/ {f = 1}
+            draft && /^PARAMETER draft_num_predict / {next}
+            f || !/^FROM / || !(proj && n++)
+            END {if (draft) print "PARAMETER draft_num_predict 0"}' |
         docker exec -i "${OLLAMA_NAME}" ollama create "$2" -f /dev/stdin
 }
-if [[ -z "${OPENAGENT_VISION}" ]] &&
-    docker exec "${OLLAMA_NAME}" ollama show "${OPENAGENT_MODEL}" |
-    grep '^ *Projector *$' >/dev/null; then
-    ensure_model "${OPENAGENT_MODEL}-text" \
-        text_only "${OPENAGENT_MODEL}" "${OPENAGENT_MODEL}-text"
-    OPENAGENT_MODEL="${OPENAGENT_MODEL}-text"
+SHOW="$(docker exec "${OLLAMA_NAME}" ollama show "${OPENAGENT_MODEL}")"
+DROP_PROJ=0
+DROP_DRAFT=0
+SUFFIX=""
+if [[ -z "${OPENAGENT_VISION}" && "${SHOW}" =~ $'\n'\ *Projector\ *$'\n' ]]; then
+    DROP_PROJ=1
+    SUFFIX+="-text"
+fi
+if [[ -z "${OPENAGENT_DRAFT}" && "${SHOW}" =~ \ draft_num_predict\ +[1-9] ]]; then
+    DROP_DRAFT=1
+    SUFFIX+="-nodraft"
+fi
+if [[ -n "${SUFFIX}" ]]; then
+    ensure_model "${OPENAGENT_MODEL}${SUFFIX}" derive "${OPENAGENT_MODEL}" \
+        "${OPENAGENT_MODEL}${SUFFIX}" "${DROP_PROJ}" "${DROP_DRAFT}"
+    OPENAGENT_MODEL="${OPENAGENT_MODEL}${SUFFIX}"
 fi
 
 # Host-backed /tmp, one directory per session name, emptied here so a session

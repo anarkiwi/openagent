@@ -13,8 +13,9 @@ Must be run as one of the shared `claude`, `ansible` or `openagent` identities. 
 container (`openagent-ollama`) runs per host and is shared by every session on
 it; weights live under `/scratch/ollama`, shared by every host. The session
 model (`OPENAGENT_MODEL`, default `qwen3:4b`, overridable per host) is pulled on first use, and every
-tool-capable model the server holds is offered in opencode; a vision model's projector is
-dropped unless `OPENAGENT_VISION` is set. Host extras such as
+tool-capable model the server holds is offered in opencode; a model's vision projector and
+speculative-decoding draft are dropped unless `OPENAGENT_VISION` or
+`OPENAGENT_DRAFT` is set. Host extras such as
 `--gpus` are opt-in via `hosts/<hostname>.sh`.
 
 ## Guards

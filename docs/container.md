@@ -34,8 +34,8 @@ host's `nvidia-container-toolkit` is required.
 On hovercraft the whole of `qwen3.8:27b` and its full 256K window fit in the
 5090's 32GB, because qwen3.8's KV cache covers only its full-attention layers.
 That tag's default sampling (temperature 1.0, top_p 0.95, top_k 20) is the one
-Qwen evaluates agentic coding with, so no separate coding tag is needed, and it
-carries the multi-token prediction head Ollama uses for speculative decoding.
+Qwen evaluates agentic coding with, so no separate coding tag is needed. Its multi-token
+prediction draft is dropped unless `OPENAGENT_DRAFT` is set (see below).
 
 defroster runs the same model for its quality, not its speed: the weights
 alone exceed the 5080's 16GB, so Ollama places the layers that do not fit, and
@@ -77,11 +77,12 @@ when the host rebooted comes back and runs until the next session exits.
 Model pulls take an `flock` on `/scratch/ollama/.pull.lock`, so hosts starting
 together download a model once.
 
-Unless `OPENAGENT_VISION` is set, a session model carrying a vision projector
-(such as `qwen3.8:27b`) is served as `<model>-text`: a copy created once, under
-the same lock, from the model's Modelfile without its projector, sharing the
-original's weight blobs. The projector would otherwise hold VRAM that Ollama
-can give to model layers instead. The session then has no image input.
+The session model is served as a copy created once, under the same lock, from
+the model's Modelfile and sharing its weight blobs, without what a session does
+not need: unless `OPENAGENT_VISION` is set, its vision projector (`-text`), and
+unless `OPENAGENT_DRAFT` is set, its multi-token prediction draft (`-nodraft`,
+by `draft_num_predict 0`), so `qwen3.8:27b` runs as `qwen3.8:27b-text-nodraft`.
+Both would otherwise hold VRAM that Ollama can give to model layers instead.
 
 ## opencode session
 
