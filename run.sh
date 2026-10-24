@@ -187,7 +187,7 @@ ensure_model "${OPENAGENT_MODEL}" \
 # as a text-only copy sharing its blobs, so the projector's VRAM goes to layers
 # instead. "ollama show" writes the weights as the Modelfile's first FROM and
 # each projector as a later one.
-# shellcheck disable=SC2317 # invoked through ensure_model
+# shellcheck disable=SC2317,SC2329 # invoked through ensure_model
 text_only() {
     docker exec "${OLLAMA_NAME}" ollama show --modelfile "$1" |
         awk 'f || !/^(FROM |#|$)/ {f = 1} f || !/^FROM / || !n++' |
