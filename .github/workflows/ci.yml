@@ -73,5 +73,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: test/e2e.sh
-      - if: always()
-        run: docker logs openagent-ollama-e2e 2>&1 | tail -50 || true
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs
+          path: |
+            test/out/*.log
+            test/out/server-tmp

@@ -75,12 +75,17 @@ if [[ -n "${OPENAGENT_DRY_RUN:-}" ]]; then
 fi
 
 # Docker has no notion of .gitignore; derive the .dockerignore from git so the
-# two cannot drift.
-{
+# two cannot drift. The checkout is shared by several identities, so the file
+# is group-writable and rewritten only when it would change.
+DOCKERIGNORE="$(
     printf '.git\n'
     git -C "${SCRIPT_DIR}" ls-files --others --ignored --exclude-standard \
         --directory 2>/dev/null || true
-} >"${SCRIPT_DIR}/.dockerignore"
+)"
+if [[ "$(cat "${SCRIPT_DIR}/.dockerignore" 2>/dev/null)" != "${DOCKERIGNORE}" ]]; then
+    [[ -e "${SCRIPT_DIR}/.dockerignore" ]] || install -m 0664 /dev/null "${SCRIPT_DIR}/.dockerignore"
+    printf '%s\n' "${DOCKERIGNORE}" >"${SCRIPT_DIR}/.dockerignore"
+fi
 
 # The checkout belongs to one identity, so git refuses the others' build-time
 # commit lookup; the images do not use it.
