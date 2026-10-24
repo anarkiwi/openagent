@@ -1,11 +1,11 @@
 # Container
 
-`run.sh` builds two images and runs two kinds of container on the host whose
+`run.sh` builds the session image and runs two kinds of container on the host whose
 docker daemon it talks to.
 
 | Container | Image | Lifetime |
 | --- | --- | --- |
-| `openagent-ollama` | `Dockerfile.ollama` | one per host, shared by all sessions, stopped when the last one exits |
+| `openagent-ollama` | `ollama/ollama`, pinned in `Dockerfile.ollama` | one per host, shared by all sessions, stopped when the last one exits |
 | `openagent-<host>-<dir>` | `Dockerfile.opencode` | one per session, `--rm` |
 
 They share the user-defined docker network `openagent`; the session reaches the
