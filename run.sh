@@ -84,9 +84,15 @@ fi
 # The checkout belongs to one identity, so git refuses the others' build-time
 # commit lookup; the images do not use it.
 export BUILDX_GIT_INFO=0
-OLLAMA_IMAGE="openagent-ollama:local"
 IMAGE="${IMAGE:-openagent:local}"
-docker build -q -t "${OLLAMA_IMAGE}" -f "${SCRIPT_DIR}/Dockerfile.ollama" "${SCRIPT_DIR}" >/dev/null
+# The server runs the stock Ollama image pinned in Dockerfile.ollama, which
+# exists only for dependabot to track: building it would refetch the base image
+# whenever the build cache lacks it, though the image store holds it.
+OLLAMA_IMAGE="$(awk '$1 == "FROM" {print $2; exit}' "${SCRIPT_DIR}/Dockerfile.ollama")"
+if ! docker image inspect "${OLLAMA_IMAGE}" >/dev/null 2>&1; then
+    echo ">> pulling ${OLLAMA_IMAGE}" >&2
+    docker pull "${OLLAMA_IMAGE}" >&2
+fi
 docker build \
     --build-arg "CONTAINER_USER=${CONTAINER_USER}" \
     --build-arg "CONTAINER_GROUP=${CONTAINER_GROUP}" \
@@ -121,8 +127,12 @@ OLLAMA_RUN_ARGS=(
     -e "OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH}"
     -e "OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE}"
     -e "OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}"
+    --entrypoint /bin/sh
     "${OLLAMA_DOCKER_ARGS[@]}"
 )
+# umask 002 keeps what the server writes to the store group-writable wherever
+# Ollama does not fix the mode itself.
+OLLAMA_CMD=(-c 'umask 002 && exec /bin/ollama serve')
 # Debugging aid: the server keeps every inference request body under its /tmp.
 [[ -n "${OLLAMA_DEBUG_LOG_REQUESTS:-}" ]] &&
     OLLAMA_RUN_ARGS+=(-e "OLLAMA_DEBUG_LOG_REQUESTS=${OLLAMA_DEBUG_LOG_REQUESTS}")
@@ -141,7 +151,7 @@ flock 8
 # as a label and compared, rather than recreating on every run and cutting off
 # the host's other sessions; a stopped server with the same spec is restarted.
 SPEC="$(printf '%s\n' "$(docker image inspect -f '{{.Id}}' "${OLLAMA_IMAGE}")" \
-    "${OLLAMA_RUN_ARGS[@]}" | sha256sum | cut -c1-64)"
+    "${OLLAMA_RUN_ARGS[@]}" "${OLLAMA_CMD[@]}" | sha256sum | cut -c1-64)"
 RUNNING="$(docker inspect -f '{{.State.Running}} {{index .Config.Labels "openagent.spec"}}' \
     "${OLLAMA_NAME}" 2>/dev/null || true)"
 if [[ "${RUNNING}" == "false ${SPEC}" ]]; then
@@ -152,7 +162,7 @@ elif [[ "${RUNNING}" != "true ${SPEC}" ]]; then
         docker rm -f "${OLLAMA_NAME}" >/dev/null
     fi
     docker run -d --name "${OLLAMA_NAME}" --label "openagent.spec=${SPEC}" \
-        "${OLLAMA_RUN_ARGS[@]}" "${OLLAMA_IMAGE}" >/dev/null
+        "${OLLAMA_RUN_ARGS[@]}" "${OLLAMA_IMAGE}" "${OLLAMA_CMD[@]}" >/dev/null
 fi
 
 for _ in $(seq 60); do
