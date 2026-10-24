@@ -83,6 +83,7 @@ DOCKERIGNORE="$(
         --directory 2>/dev/null || true
 )"
 if [[ "$(cat "${SCRIPT_DIR}/.dockerignore" 2>/dev/null)" != "${DOCKERIGNORE}" ]]; then
+    [[ -w "${SCRIPT_DIR}/.dockerignore" ]] || rm -f "${SCRIPT_DIR}/.dockerignore"
     [[ -e "${SCRIPT_DIR}/.dockerignore" ]] || install -m 0664 /dev/null "${SCRIPT_DIR}/.dockerignore"
     printf '%s\n' "${DOCKERIGNORE}" >"${SCRIPT_DIR}/.dockerignore"
 fi
