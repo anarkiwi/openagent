@@ -77,6 +77,12 @@ when the host rebooted comes back and runs until the next session exits.
 Model pulls take an `flock` on `/scratch/ollama/.pull.lock`, so hosts starting
 together download a model once.
 
+Unless `OPENAGENT_VISION` is set, a session model carrying a vision projector
+(such as `qwen3.8:27b`) is served as `<model>-text`: a copy created once, under
+the same lock, from the model's Modelfile without its projector, sharing the
+original's weight blobs. The projector would otherwise hold VRAM that Ollama
+can give to model layers instead. The session then has no image input.
+
 ## opencode session
 
 `opencode` is pinned in `package.json`/`package-lock.json` (tracked by

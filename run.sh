@@ -55,6 +55,7 @@ OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-f16}"
 OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
 OPENAGENT_OUTPUT_LIMIT="${OPENAGENT_OUTPUT_LIMIT:-32768}"
 OPENAGENT_THINK="${OPENAGENT_THINK:-xhigh}"
+OPENAGENT_VISION="${OPENAGENT_VISION:-}"
 
 PIDS_LIMIT="${PIDS_LIMIT:-2048}"
 HOST_MEM_BYTES="$(free -b | awk '/^Mem:/{print $2}')"
@@ -63,8 +64,8 @@ MEMORY_LIMIT="${MEMORY_LIMIT:-$(((HOST_MEM_BYTES - 1073741824) / 1048576))m}"
 # Print the resolved configuration and stop, without building or running.
 if [[ -n "${OPENAGENT_DRY_RUN:-}" ]]; then
     for var in HOST OPENAGENT_MODEL OLLAMA_CONTEXT_LENGTH OLLAMA_KV_CACHE_TYPE \
-        OLLAMA_KEEP_ALIVE OPENAGENT_OUTPUT_LIMIT OPENAGENT_THINK OLLAMA_DIR \
-        OPENAGENT_MOUNTS; do
+        OLLAMA_KEEP_ALIVE OPENAGENT_OUTPUT_LIMIT OPENAGENT_THINK OPENAGENT_VISION \
+        OLLAMA_DIR OPENAGENT_MOUNTS; do
         printf '%s=%s\n' "${var}" "${!var}"
     done
     printf 'HOST_DOCKER_ARGS=%s\nOLLAMA_DOCKER_ARGS=%s\n' \
@@ -160,20 +161,44 @@ for _ in $(seq 60); do
 done
 docker exec "${OLLAMA_NAME}" ollama list >/dev/null
 
-# Pulls serialise on a lock in the shared directory, so hosts starting together
-# download a model once between them; the check repeats under the lock because
-# the winner populates the store while the others wait.
-if ! docker exec "${OLLAMA_NAME}" ollama show "${OPENAGENT_MODEL}" >/dev/null 2>&1; then
-    LOCK="${OLLAMA_DIR}/.pull.lock"
-    [[ -f "${LOCK}" ]] || install -m 0664 /dev/null "${LOCK}"
+# A missing model is made under a lock in the shared directory, so hosts
+# starting together download or derive it once between them; the check repeats
+# under the lock because the winner populates the store while the others wait.
+has_model() {
+    docker exec "${OLLAMA_NAME}" ollama show "$1" >/dev/null 2>&1
+}
+ensure_model() {
+    local model="$1"
+    shift
+    has_model "${model}" && return 0
+    local lock="${OLLAMA_DIR}/.pull.lock"
+    [[ -f "${lock}" ]] || install -m 0664 /dev/null "${lock}"
     (
         flock 9
-        if ! docker exec "${OLLAMA_NAME}" ollama show "${OPENAGENT_MODEL}" >/dev/null 2>&1; then
-            TTY=()
-            [[ -t 1 ]] && TTY=(-t)
-            docker exec "${TTY[@]}" "${OLLAMA_NAME}" ollama pull "${OPENAGENT_MODEL}"
-        fi
-    ) 9>"${LOCK}"
+        has_model "${model}" || "$@"
+    ) 9>"${lock}"
+}
+TTY=()
+[[ -t 1 ]] && TTY=(-t)
+ensure_model "${OPENAGENT_MODEL}" \
+    docker exec "${TTY[@]}" "${OLLAMA_NAME}" ollama pull "${OPENAGENT_MODEL}"
+
+# Unless OPENAGENT_VISION is set, a model carrying a vision projector is served
+# as a text-only copy sharing its blobs, so the projector's VRAM goes to layers
+# instead. "ollama show" writes the weights as the Modelfile's first FROM and
+# each projector as a later one.
+# shellcheck disable=SC2317 # invoked through ensure_model
+text_only() {
+    docker exec "${OLLAMA_NAME}" ollama show --modelfile "$1" |
+        awk 'f || !/^(FROM |#|$)/ {f = 1} f || !/^FROM / || !n++' |
+        docker exec -i "${OLLAMA_NAME}" ollama create "$2" -f /dev/stdin
+}
+if [[ -z "${OPENAGENT_VISION}" ]] &&
+    docker exec "${OLLAMA_NAME}" ollama show "${OPENAGENT_MODEL}" |
+    grep '^ *Projector *$' >/dev/null; then
+    ensure_model "${OPENAGENT_MODEL}-text" \
+        text_only "${OPENAGENT_MODEL}" "${OPENAGENT_MODEL}-text"
+    OPENAGENT_MODEL="${OPENAGENT_MODEL}-text"
 fi
 
 # Host-backed /tmp, one directory per session name, emptied here so a session
