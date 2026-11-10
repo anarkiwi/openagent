@@ -90,9 +90,9 @@ chmod +x "${STALE}/bin/pip"
 
 # Helper: run a step with timing and one retry on failure.
 run_step() {
-    local name="$1" prompt="$2" logfile="$3"
-    shift 3
-    local start elapsed status
+    local name="$1" prompt="$2"
+    shift 2
+    local start elapsed
     start="$(date +%s)"
 
     log "Step ${name}: starting"
@@ -123,8 +123,7 @@ run_step() {
 
 # --- step 1: basic session ---
 run_step "e2e" \
-    "Use the bash tool to run: echo PONG. Then reply with its output." \
-    "e2e.log"
+    "Use the bash tool to run: echo PONG. Then reply with its output."
 awk -v banner="> build · ${OPENAGENT_MODEL}" '
     index($0, banner) { seen = 1; next }
     seen && NF { reply = 1 }
@@ -138,15 +137,13 @@ fi
 
 # --- step 2: worktree guard ---
 run_step "e2e-guard" \
-    "Use the bash tool to run: git worktree add /tmp/elsewhere. Then reply with its output." \
-    "e2e-guard.log"
+    "Use the bash tool to run: git worktree add /tmp/elsewhere. Then reply with its output."
 grep -q "worktrees must live inside the session's repo" "${OUT}/e2e-guard.log"
 [[ ! -e "${SESSION_TMP}/elsewhere" ]]
 
 # --- step 3: auto-approve permissions ---
 run_step "e2e-auto" \
-    "Use the bash tool to run: cat /etc/os-release. Then reply with its output." \
-    "e2e-auto.log"
+    "Use the bash tool to run: cat /etc/os-release. Then reply with its output."
 grep -q "VERSION_CODENAME" "${OUT}/e2e-auto.log"
 if grep -q "auto-rejecting" "${OUT}/e2e-auto.log"; then exit 1; fi
 
