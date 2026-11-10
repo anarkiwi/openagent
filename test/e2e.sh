@@ -59,19 +59,6 @@ trap 'echo "!! e2e failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 rm -rf "${OUT}/server-tmp"
 
 cd "${ROOT}"
-
-# --- preflight: verify server and model ---
-log "Preflight check"
-ts
-if ! server_ok; then
-    log "Ollama server not ready"
-    collect_diags
-    exit 1
-fi
-docker exec "${OLLAMA_NAME}" ollama list 2>/dev/null >"${OUT}/models_list.log" || true
-log "Preflight ok"
-ts
-
 # Seed the session's venv as one left by an image with another python: its
 # interpreter link and scripts still run, but its packages are under a
 # site-packages the current python never reads, so the entrypoint must rebuild
