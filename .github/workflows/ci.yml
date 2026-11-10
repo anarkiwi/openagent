@@ -70,8 +70,29 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - run: test/e2e.sh
+        continue-on-error: true
       - if: always()
-        run: docker logs openagent-ollama-e2e 2>&1 | tail -50 || true
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs
+          path: |
+            test/out/*.log
+            test/out/server-tmp
+      - if: failure()
+        run: |
+          echo "--- docker info ---"
+          docker info || true
+          echo "--- docker system df ---"
+          docker system df || true
+          echo "--- disk space ---"
+          df -h || true
+          echo "--- running containers ---"
+          docker ps -a --filter "network=openagent-e2e" || true
+          echo "--- memory ---"
+          free -m || true
+          exit 1
