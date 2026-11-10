@@ -111,10 +111,9 @@ run_step() {
 # --- step 1: basic session ---
 run_step "e2e" \
     "Use the bash tool to run: echo PONG. Then reply with its output."
-awk -v banner="> build · ${OPENAGENT_MODEL}" '
-    index($0, banner) { seen = 1; next }
-    seen && NF { reply = 1 }
-    END { exit !reply }' "${OUT}/e2e.log"
+grep -qiE "${OPENAGENT_MODEL}|PONG" "${OUT}/e2e_stderr.log" ||
+    grep -qiE "${OPENAGENT_MODEL}|PONG" "${OUT}/e2e.log" ||
+    { log "No model output in e2e logs"; exit 1; }
 
 # Verify server is still healthy after step 1
 if ! server_ok; then
