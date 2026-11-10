@@ -3,7 +3,7 @@
 # plumbing: exit cleanly, the model responds, tool calls carry reasoning, the
 # guards plugin denies worktrees outside the repo, permissions are
 # auto-approved, and the server stops when the session exits.
-set -euo pipefail
+set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${ROOT}/test/out"
@@ -26,33 +26,39 @@ ts() { date '+%Y-%m-%dT%H:%M:%S%z' | tee -a "${DIAG_LOG}"; }
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "${DIAG_LOG}" >&2; }
 
-server_ok() {
-    docker exec "${OLLAMA_NAME}" ollama list >/dev/null 2>&1 &&
-        docker exec "${OLLAMA_NAME}" curl -sf http://localhost:11434/api/tags >/dev/null 2>&1
-}
+DIAG_COLLECTED=0
 
+# Every docker call is bounded: a wedged daemon must not hang the script, and
+# docker events streams until --until, so it is bounded on both sides.
 collect_diags() {
+    if [[ "${DIAG_COLLECTED}" == 1 ]]; then
+        return 0
+    fi
+    DIAG_COLLECTED=1
     log "Collecting diagnostics..."
-    docker stats --no-stream "${OLLAMA_NAME}" 2>/dev/null >>"${OUT}/docker_stats.log" || true
-    docker inspect "${OLLAMA_NAME}" 2>/dev/null >"${OUT}/docker_inspect.log" || true
-    docker events --since "$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%S.%NZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    timeout 30 docker stats --no-stream "${OLLAMA_NAME}" 2>/dev/null >>"${OUT}/docker_stats.log" || true
+    timeout 30 docker inspect "${OLLAMA_NAME}" 2>/dev/null >"${OUT}/docker_inspect.log" || true
+    timeout 60 docker events \
+        --since "$(date -u -d '10 minutes ago' +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+        --until "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
         --filter "container=${OLLAMA_NAME}" 2>/dev/null >"${OUT}/docker_events.log" || true
     cat /proc/meminfo 2>/dev/null >"${OUT}/host_meminfo.log" || true
     if command -v free >/dev/null 2>&1; then
         free -m 2>/dev/null >"${OUT}/host_free.log" || true
     fi
     if command -v nvidia-smi >/dev/null 2>&1; then
-        nvidia-smi 2>/dev/null >"${OUT}/nvidia_smi.log" || true
+        timeout 30 nvidia-smi 2>/dev/null >"${OUT}/nvidia_smi.log" || true
     fi
 }
 
 cleanup() {
-    docker logs "${OLLAMA_NAME}" >"${OUT}/server.log" 2>&1 || true
-    [[ -d "${OUT}/server-tmp" ]] ||
-        docker cp -q "${OLLAMA_NAME}:/tmp" "${OUT}/server-tmp" 2>/dev/null || true
+    timeout 60 docker logs "${OLLAMA_NAME}" >"${OUT}/server.log" 2>&1 || true
+    if [[ ! -d "${OUT}/server-tmp" ]]; then
+        timeout 300 docker cp -q "${OLLAMA_NAME}:/tmp" "${OUT}/server-tmp" 2>/dev/null || true
+    fi
     collect_diags
-    docker rm -f "${OLLAMA_NAME}" >/dev/null 2>&1 || true
-    docker network rm "${NETWORK}" >/dev/null 2>&1 || true
+    timeout 60 docker rm -f "${OLLAMA_NAME}" >/dev/null 2>&1 || true
+    timeout 60 docker network rm "${NETWORK}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 trap 'echo "!! e2e failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
@@ -100,26 +106,28 @@ run_step() {
             sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' >"${OUT}/${name}_retry.log" || STATUS=$?
         elapsed=$(( $(date +%s) - start ))
         log "Step ${name}: retry exit=${STATUS} time=${elapsed}s"
-        [[ "${STATUS}" -eq 0 ]] || {
+        if [[ "${STATUS}" -ne 0 ]]; then
             log "Step ${name}: failed after retry with exit ${STATUS}"
             collect_diags
             exit "${STATUS}"
-        }
+        fi
+        # Assert on the attempt that decided the step; keep both for post-mortem.
+        mv "${OUT}/${name}.log" "${OUT}/${name}_attempt1.log"
+        mv "${OUT}/${name}_stderr.log" "${OUT}/${name}_stderr_attempt1.log"
+        mv "${OUT}/${name}_retry.log" "${OUT}/${name}.log"
+        mv "${OUT}/${name}_stderr_retry.log" "${OUT}/${name}_stderr.log"
+        log "Step ${name}: ok on retry"
     fi
 }
 
 # --- step 1: basic session ---
 run_step "e2e" \
     "Use the bash tool to run: echo PONG. Then reply with its output."
-grep -qiE "${OPENAGENT_MODEL}|PONG" "${OUT}/e2e_stderr.log" ||
-    grep -qiE "${OPENAGENT_MODEL}|PONG" "${OUT}/e2e.log" ||
-    { log "No model output in e2e logs"; exit 1; }
-
-# Verify server is still healthy after step 1
-if ! server_ok; then
-    log "Step 1 post-check: server unhealthy"
-    collect_diags; exit 1
-fi
+# The server is down after each step by design (run.sh stops it when the
+# session exits); the State.Running assertion below covers that.
+grep -qi PONG "${OUT}/e2e.log" ||
+    grep -qi PONG "${OUT}/e2e_stderr.log" ||
+    { log "Step 1: no PONG reply in e2e logs"; exit 1; }
 
 # --- step 2: worktree guard ---
 run_step "e2e-guard" \
