@@ -36,6 +36,8 @@ On hovercraft the whole of `qwen3.8:27b` and its full 256K window fit in the
 That tag's default sampling (temperature 1.0, top_p 0.95, top_k 20) is the one
 Qwen evaluates agentic coding with, so no separate coding tag is needed. Its multi-token
 prediction draft is dropped unless `OPENAGENT_DRAFT` is set (see below).
+hovercraft also sets `GGML_CUDA_DISABLE_GRAPHS=1` on the server, because CUDA
+graphs hang it on the 5090.
 
 defroster runs the same model for its quality, not its speed: the weights
 alone exceed the 5080's 16GB, so Ollama places the layers that do not fit, and
