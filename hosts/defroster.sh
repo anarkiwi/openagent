@@ -5,7 +5,7 @@
 # host, not an "nvidia" docker runtime; the Ollama image ships its own CUDA
 # runtime libraries, so no CUDA base image is needed either.
 #
-# A qwen3.8 27B, unlike hovercraft (see hosts/hovercraft.sh), trading speed
+# The same qwen3.8 27B as hovercraft (see hosts/hovercraft.sh), trading speed
 # for quality: its weights alone outgrow the 5080, so Ollama keeps the remaining
 # layers in host memory. Every layer and KV cache slot that spills runs on
 # the CPU, so the window is half the trained one, which keeps about half the

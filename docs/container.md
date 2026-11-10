@@ -27,14 +27,16 @@ host's `nvidia-container-toolkit` is required.
 
 | Host | GPU | Model | Context | KV cache |
 | --- | --- | --- | --- | --- |
-| hovercraft | RTX 5090 | `qwen3.6:27b-coding` | 256K (trained) | `q8_0` |
+| hovercraft | RTX 5090 | `qwen3.8:27b` | 256K (trained) | `q8_0` |
 | defroster | RTX 5080 | `qwen3.8:27b` | 128K | `q8_0` |
 | other | none | `qwen3:4b` | 32K | `f16` |
 
-On hovercraft the whole of `qwen3.6:27b-coding` and its full 256K window fit in
-the 5090's 32GB, because qwen3.6's KV cache covers only its full-attention
-layers. The `-coding` tag is the same weights with Qwen's coding sampling
-defaults.
+On hovercraft the whole of `qwen3.8:27b` and its full 256K window fit in the
+5090's 32GB, because qwen3.8's KV cache covers only its full-attention layers.
+That tag's default sampling (temperature 1.0, top_p 0.95, top_k 20) is the one
+Qwen evaluates agentic coding with, so no separate coding tag is needed. Its
+multi-token prediction draft is dropped unless `OPENAGENT_DRAFT` is set (see
+below).
 CUDA graphs are left on; set `GGML_CUDA_DISABLE_GRAPHS=1` to disable them on the
 server if they hang it.
 
