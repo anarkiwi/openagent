@@ -28,16 +28,17 @@ host's `nvidia-container-toolkit` is required.
 | Host | GPU | Model | Context | KV cache |
 | --- | --- | --- | --- | --- |
 | hovercraft | RTX 5090 | `qwen3.8:27b` | 256K (trained) | `q8_0` |
-| defroster | RTX 5080 | `qwen3.8:27b` | 128K | `q8_0` |
+| other | none | `qwen3:4b` | 192K | `q8_0` |
 | other | none | `qwen3:4b` | 32K | `f16` |
 
 On hovercraft the whole of `qwen3.8:27b` and its full 256K window fit in the
 5090's 32GB, because qwen3.8's KV cache covers only its full-attention layers.
 That tag's default sampling (temperature 1.0, top_p 0.95, top_k 20) is the one
-Qwen evaluates agentic coding with, so no separate coding tag is needed. Its multi-token
-prediction draft is dropped unless `OPENAGENT_DRAFT` is set (see below).
-hovercraft also sets `GGML_CUDA_DISABLE_GRAPHS=1` on the server, because CUDA
-graphs hang it on the 5090.
+Qwen evaluates agentic coding with, so no separate coding tag is needed. Its
+multi-token prediction draft is dropped unless `OPENAGENT_DRAFT` is set (see
+below).
+CUDA graphs are left on; set `GGML_CUDA_DISABLE_GRAPHS=1` to disable them on the
+server if they hang it.
 
 defroster runs the same model for its quality, not its speed: the weights
 alone exceed the 5080's 16GB, so Ollama places the layers that do not fit, and
@@ -56,11 +57,11 @@ every account. Settings:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `OLLAMA_CONTEXT_LENGTH` | `32768` | context the server evaluates, capped at the model's trained context; opencode's limits follow it |
+| `OLLAMA_CONTEXT_LENGTH` | `196608` | context the server evaluates, capped at the model's trained context; opencode's limits follow it |
 | `OLLAMA_KEEP_ALIVE` | `-1` | how long an idle model stays loaded; `-1` keeps it until the server stops with the host's last session |
 | `OLLAMA_NOPRUNE` | `1` | the store is shared across hosts, so a starting server must not delete blobs another host is still downloading |
-| `OLLAMA_KV_CACHE_TYPE` | `f16` | `q8_0` halves the KV cache, for a longer context in the same memory |
-| `OLLAMA_FLASH_ATTENTION` | `1` | required by a quantized KV cache |
+| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | halves the KV cache relative to `f16`, for a longer context in the same memory |
+| `OLLAMA_FLASH_ATTENTION` | `1` | required by a quantized KV cache; `0` turns it off |
 | `OLLAMA_NO_CLOUD` | `1` | local models only |
 
 The server is replaced only when its image or run arguments change: a hash of
